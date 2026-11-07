@@ -1,0 +1,14 @@
+# Works on any Android phone: opens the system Settings app, scrolls, and takes screenshots.
+# No text assertions, because Settings labels differ by manufacturer and language.
+#
+#   tethertrace run examples/android-settings-tour.yaml
+app: com.android.settings
+name: android-settings-tour
+steps:
+  - launch
+  - sleep: 1500
+  - screenshot: settings-top
+  - scroll: down
+  - screenshot: settings-scrolled
+  - scroll: up
+  - back

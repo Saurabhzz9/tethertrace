@@ -1,0 +1,21 @@
+# Template for a login test. Copy it, change `app` and the labels to match your app,
+# and keep secrets in environment variables:
+#
+#   TEST_EMAIL=me@example.com TEST_PASSWORD=... tethertrace run my-login.yaml
+#
+# Find the labels with `tethertrace ui` while the screen is open.
+app: com.example.app
+name: login
+steps:
+  - launch
+  - tap: "Sign in"                    # visible text or accessibility label
+  - tap: { id: email }                # resource id (Views / Compose testTag)
+  - type: "${TEST_EMAIL}"             # ASCII only; typed values never reach reports
+  - tap: { id: password }
+  - type: "${TEST_PASSWORD}"
+  - key: enter
+  - waitFor: "Home"                   # waits up to 10 s (override with timeoutMs)
+    timeoutMs: 15000
+  - assertVisible: { contains: "welcome" }
+  - assertHidden: "Sign in"
+  - screenshot: logged-in

@@ -1,0 +1,42 @@
+name: Bug report
+description: Something didn't work
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The exact command and its full output. Remove pairing codes and personal data.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: input
+    id: phone
+    attributes:
+      label: Phone model and Android version
+      placeholder: Pixel 8, Android 15
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: Computer OS and Node version
+      placeholder: Windows 11, Node 24.1
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: tethertrace version
+      placeholder: output of `tethertrace --version`
+  - type: dropdown
+    id: app
+    attributes:
+      label: App type
+      options: [Native (Views), Jetpack Compose, Flutter, React Native, Other / not app-specific]

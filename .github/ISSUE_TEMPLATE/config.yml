@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Tried it on your phone? Share how it went
+    url: https://github.com/Saurabhzz9/tethertrace/discussions
+    about: Phone model, Android version, what worked and what didn't. This helps more than anything.
+  - name: Security vulnerability
+    url: https://github.com/Saurabhzz9/tethertrace/security/advisories/new
+    about: Please report security issues privately.

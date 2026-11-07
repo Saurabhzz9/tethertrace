@@ -1,0 +1,69 @@
+{
+  "name": "tethertrace",
+  "version": "0.1.0",
+  "description": "Test any Android app on a real phone over Wi-Fi with no adb or Android SDK. Honest failure evidence, YAML flows, and an MCP server for Claude, Codex and local models.",
+  "keywords": [
+    "android",
+    "testing",
+    "adb",
+    "wireless-debugging",
+    "mcp",
+    "claude",
+    "codex",
+    "ai-agents",
+    "e2e",
+    "mobile-testing",
+    "flutter",
+    "react-native",
+    "local-first"
+  ],
+  "license": "MIT",
+  "author": "Saurabhzz9",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Saurabhzz9/tethertrace.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Saurabhzz9/tethertrace/issues"
+  },
+  "homepage": "https://github.com/Saurabhzz9/tethertrace#readme",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "tethertrace": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepare": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@noble/curves": "^2.4.0",
+    "commander": "^15.1.0",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^6.0.3"
+  }
+}
