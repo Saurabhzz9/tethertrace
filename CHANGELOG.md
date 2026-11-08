@@ -2,6 +2,13 @@
 
 All notable changes are listed here. The project follows [Semantic Versioning](https://semver.org).
 
+## Unreleased
+
+### Added
+
+- MCP prompt `write_test`: asks the connected model to inspect the app (and its source), write a YAML flow for a goal, run it and fix it until it passes.
+- README screenshots from real runs, and a section on letting an AI write flows for your app.
+
 ## 0.1.0 — 2026-11-07
 
 First public version.

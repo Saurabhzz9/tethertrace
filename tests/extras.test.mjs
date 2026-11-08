@@ -213,3 +213,19 @@ test("MCP: --read-only hides every tool that changes the phone; --package scopes
     await scoped.close();
   }
 });
+
+test("MCP: write_test prompt lets any client ask its model to write and fix a flow for the app", async () => {
+  const m = await mcpAgainstMock();
+  try {
+    const prompts = (await m.client.listPrompts()).prompts.map((p) => p.name);
+    assert.ok(prompts.includes("write_test"));
+    const p = await m.client.getPrompt({ name: "write_test", arguments: { package: "com.example.notes", goal: "a user can create a note" } });
+    const t = p.messages[0].content.text;
+    assert.match(t, /com\.example\.notes/);
+    assert.match(t, /a user can create a note/);
+    assert.match(t, /run_flow/);
+    assert.match(t, /\$\{TEST_EMAIL\}/);
+  } finally {
+    await m.close();
+  }
+});

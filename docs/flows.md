@@ -102,6 +102,10 @@ Failure categories:
 | `unsupported_step` | Unknown step or untypable text |
 | `unknown` | Anything else; the message has details |
 
+## Let an AI write flows
+
+With the MCP server connected (see [mcp.md](mcp.md)), use the built-in `write_test` prompt or ask your agent to read the app source, inspect each screen with `ui_tree`, write the flow, run it with `run_flow` and fix it until it passes. `tethertrace test app.apk` also saves `explored-flow.yaml` as a starting point.
+
 ## Tips
 
 - Use `{ id: ... }` for stable tests, text for quick ones.
