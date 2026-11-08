@@ -21,7 +21,11 @@ import {
   PACKET_SPAKE2_MSG,
   PEER_DEVICE_GUID,
   modulusFromAndroidKey,
+  encodePng,
 } from "../../dist/index.js";
+
+/** A valid 1×1 PNG for mocked `screencap -p`. */
+export const TINY_PNG = encodePng(1, 1, Buffer.from([0, 20, 20, 20, 255]));
 
 const SHA1_DIGEST_INFO = Buffer.from("3021300906052b0e03021a05000414", "hex");
 

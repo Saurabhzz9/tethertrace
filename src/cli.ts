@@ -13,6 +13,7 @@ import { explore } from "./explore.js";
 import { startMcpServer } from "./mcp.js";
 import { loadFlow, runFlow } from "./runner.js";
 import { formatNodes, smoke } from "./smoke.js";
+import { Recording, attachRecording, recordWhile } from "./record.js";
 import { VERSION } from "./version.js";
 
 const program = new Command()
@@ -47,6 +48,10 @@ async function withDevice<T>(target: string | undefined, fn: (d: Device) => Prom
     d.close();
   }
 }
+
+const maybeRecord = <T>(d: Device, on: boolean | undefined, outDir: string, fn: () => Promise<T>) => recordWhile(d, on, outDir, fn, (m) => console.error(m));
+
+const recordOpt = () => new Option("--record", "record the phone screen into the report");
 
 const deviceOpt = () => new Option("-d, --device <host:port>", "phone's Wireless debugging address (default: auto-discover, or $TETHERTRACE_DEVICE)");
 
@@ -274,13 +279,14 @@ program
   .option("--wait <seconds>", "how long to watch the app after launch", "8")
   .option("--out <dir>", "evidence folder (default reports/smoke-<package>-<time>)")
   .option("--no-screenshot", "do not capture the screen")
+  .addOption(recordOpt())
   .addOption(deviceOpt())
-  .action(async (o: { package?: string; apk?: string; wait: string; out?: string; screenshot: boolean; device?: string }) => {
+  .action(async (o: { package?: string; apk?: string; wait: string; out?: string; screenshot: boolean; device?: string; record?: boolean }) => {
     const pkg = o.package ?? (o.apk ? (await readApkInfo(o.apk)).packageName : undefined);
     if (!pkg) throw new Error("Give --package or --apk");
     const outDir = o.out ?? `reports/smoke-${pkg}-${stamp()}`;
     await withDevice(o.device, async (d) => {
-      const s = await smoke(d, { pkg, apk: o.apk, waitMs: Number(o.wait) * 1000, outDir, screenshot: o.screenshot, log: (m) => console.error(m) });
+      const s = await maybeRecord(d, o.record, outDir, () => smoke(d, { pkg, apk: o.apk, waitMs: Number(o.wait) * 1000, outDir, screenshot: o.screenshot, log: (m) => console.error(m) }));
       console.log(`\n${s.verdict}: ${s.reason}`);
       if (s.launch?.totalTimeMs !== undefined) console.log(`Cold start: ${s.launch.totalTimeMs} ms`);
       if (s.memoryPssKb) console.log(`Memory: ${(s.memoryPssKb / 1024).toFixed(1)} MB`);
@@ -296,11 +302,12 @@ program
   .argument("<flow.yaml>")
   .addOption(deviceOpt())
   .option("--out <dir>", "report folder (default reports/<flow>-<time>)")
-  .action(async (file: string, o: { device?: string; out?: string }) => {
+  .addOption(recordOpt())
+  .action(async (file: string, o: { device?: string; out?: string; record?: boolean }) => {
     const flow = await loadFlow(file);
     const outDir = o.out ?? `reports/${flow.name}-${stamp()}`;
     await withDevice(o.device, async (d) => {
-      const s = await runFlow(d, flow, { outDir, log: (m) => console.error(m) });
+      const s = await maybeRecord(d, o.record, outDir, () => runFlow(d, flow, { outDir, log: (m) => console.error(m) }));
       if (s.status === "passed") console.log(`\n✔ ${flow.name} passed (${s.steps.length} steps)${s.launchTimeMs !== undefined ? `, cold start ${s.launchTimeMs} ms` : ""}`);
       else {
         console.log(`\n✖ ${flow.name} failed at step ${s.failure!.step}: ${s.failure!.category}`);
@@ -340,8 +347,9 @@ program
   .option("--deny <regex>", "extra labels never to tap (case-insensitive regex)")
   .option("--no-install", "don't install the APK, just read its package")
   .option("--out <dir>", "report folder (default reports/test-<package>-<time>)")
+  .addOption(recordOpt())
   .addHelpText("after", "\nExamples:\n  tethertrace test app-release.apk\n  tethertrace test com.example.app --actions 80\n\nNever taps things that look destructive or outward-facing (delete, pay, send, share, log out…), never types, declines permission prompts.")
-  .action(async (target: string, o: { device?: string; actions: string; minutes: string; deny?: string; install: boolean; out?: string }) => {
+  .action(async (target: string, o: { device?: string; actions: string; minutes: string; deny?: string; install: boolean; out?: string; record?: boolean }) => {
     const isApk = /\.apk$/i.test(target);
     const pkg = isApk ? (await readApkInfo(target)).packageName : target;
     const outDir = o.out ?? `reports/test-${pkg}-${stamp()}`;
@@ -351,14 +359,14 @@ program
         await d.install(target);
       } else if (!(await d.isInstalled(pkg))) throw new Error(`${pkg} is not installed${isApk ? " (drop --no-install)" : "; pass the .apk instead"}`);
       console.error(`Exploring ${pkg}…`);
-      const s = await explore(d, {
+      const s = await maybeRecord(d, o.record, outDir, () => explore(d, {
         pkg,
         outDir,
         maxActions: Number(o.actions),
         timeBudgetMs: Number(o.minutes) * 60_000,
         deny: o.deny ? new RegExp(o.deny, "i") : undefined,
         log: (m) => console.error(m),
-      });
+      }));
       console.log(`\n${s.verdict === "no_crash_observed" ? "✔" : "✖"} ${s.verdict}: ${s.reason}`);
       if (s.launchTimeMs !== undefined) console.log(`Cold start: ${s.launchTimeMs} ms`);
       if (s.crashAfter) console.log(`Crashed after tapping "${s.crashAfter.label}" on screen ${s.crashAfter.screen}. Re-run: tethertrace run ${outDir}/repro.yaml`);
@@ -367,6 +375,27 @@ program
       console.log(`Report: ${outDir}/report.html`);
       console.log(`Flow to keep: ${outDir}/explored-flow.yaml`);
       if (s.verdict !== "no_crash_observed") process.exitCode = 2;
+    });
+  });
+
+program
+  .command("record")
+  .description("Record the phone screen (stops after --seconds, or press Ctrl+C)")
+  .addOption(deviceOpt())
+  .option("-o, --out <dir>", "folder for the recording (default reports/recording-<time>)")
+  .option("--seconds <n>", "stop after this many seconds")
+  .addHelpText("after", "\nUses the phone's built-in recorder when it works, otherwise continuous screenshots (an MP4 is made too if ffmpeg is installed).")
+  .action(async (o: { device?: string; out?: string; seconds?: string }) => {
+    const outDir = o.out ?? `reports/recording-${stamp()}`;
+    await withDevice(o.device, async (d) => {
+      const rec = await Recording.start(d, { maxSeconds: o.seconds ? Number(o.seconds) : undefined });
+      console.error(`Recording (${rec.mode === "video" ? "built-in recorder" : "screenshot frames"})… ${o.seconds ? `${o.seconds} s` : "press Ctrl+C to stop"}`);
+      await new Promise<void>((resolve) => {
+        process.once("SIGINT", () => resolve());
+        if (o.seconds) void rec.finished().then(() => resolve());
+      });
+      const names = await attachRecording(outDir, await rec.stop());
+      console.log(`Saved: ${names.map((n) => `${outDir}/${n}`).join(", ")}`);
     });
   });
 
