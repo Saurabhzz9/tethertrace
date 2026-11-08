@@ -100,6 +100,12 @@ tethertrace explain reports/<run> -m openai-compatible:<model> --base-url http:/
 | `run_flow` | yes | Run a YAML flow (file or inline) and return the result |
 | `shell` | yes | Only with `--allow-shell` |
 
+## Prompts
+
+| Prompt | What it does |
+|---|---|
+| `write_test` (package, goal) | Asks the model to inspect the app on the phone (and its source, if available), write a YAML flow for the goal, run it and fix it until it passes |
+
 ## Options
 
 | Flag | Effect |

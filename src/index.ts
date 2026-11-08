@@ -11,7 +11,7 @@ export { parseUiNodes, type UiNode } from "./device.js";
 export { findNodes, pickOne, SelectorError, visibleLabels, type Selector } from "./device.js";
 export { runFlow, loadFlow, type RunSummary, type Flow, type FailureCategory } from "./runner.js";
 export { readApkInfo, parseManifest, readZipEntry, type ApkInfo } from "./apk.js";
-export { createMcpServer, startMcpServer, type McpOptions } from "./mcp.js";
+export { createMcpServer, startMcpServer, writeTestPrompt, type McpOptions } from "./mcp.js";
 export { explainLocally, explainWithModel, loadReport, parseModelSpec } from "./explain.js";
 export { rawScreencapToPng, encodePng } from "./image.js";
 export { VERSION } from "./version.js";

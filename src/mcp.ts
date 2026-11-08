@@ -463,7 +463,50 @@ export function createMcpServer(key: AdbKey, o: McpOptions = {}) {
     });
   }
 
+  // A ready-made prompt so any MCP client can ask its model to write a flow for the app being built.
+  server.registerPrompt(
+    "write_test",
+    {
+      title: "Write a tethertrace test for my app",
+      description: "Walk the app on the phone, write a YAML flow for a goal, run it and fix it until it passes.",
+      argsSchema: {
+        package: z.string().describe("Application id of the app under test, e.g. com.example.app"),
+        goal: z.string().describe('What the test should prove, e.g. "a user can log in with the test account"'),
+      },
+    },
+    ({ package: pkg, goal }) => ({
+      messages: [{ role: "user" as const, content: { type: "text" as const, text: writeTestPrompt(pkg, goal) } }],
+    }),
+  );
+
   return server;
+}
+
+export function writeTestPrompt(pkg: string, goal: string) {
+  return `Write a tethertrace YAML test for the Android app ${pkg} that proves: ${goal}
+
+How to work:
+1. If the app's source code is in this workspace, read it first to learn the screens, labels and resource ids.
+2. Use launch_app, then ui_tree (and screenshot when the tree is unclear) on each screen to find the real labels and ids. Never guess a label you have not seen.
+3. Write the flow to flows/<short-name>.yaml using this format:
+
+app: ${pkg}
+name: <short-name>
+steps:
+  - launch
+  - tap: "Visible text"            # or { id: x }, { desc: x }, { contains: x }, add index when several match
+  - type: "\${TEST_EMAIL}"          # ASCII only; secrets always from environment variables
+  - key: enter                      # back, home, enter, tab, delete
+  - waitFor: "Next screen text"     # optional timeoutMs: 15000
+  - assertVisible: { contains: "expected" }
+  - assertHidden: "Loading"
+  - scroll: down
+  - screenshot: <name>
+
+Prefer { id: ... } selectors for stability, and waitFor over sleep. End with an assertion that proves the goal.
+4. Run it with run_flow. If it fails, read the failure category, "On screen instead" and app_logs, fix the flow (not the app) and run again until it passes, or explain why the app itself is broken.
+5. Do not add steps that pay, send messages, share, delete data or sign out unless the goal explicitly needs them.
+6. Finish with the final YAML, the run result and the report path.`;
 }
 
 export async function startMcpServer(o: McpOptions = {}) {

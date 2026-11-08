@@ -12,22 +12,17 @@ No `adb`. No Android SDK. No test code. No cloud. Works with Claude, Codex and l
 
 </div>
 
-```text
-$ tethertrace pair 482913
-Paired with adb-XXXXXXXX-abc123.
+<p align="center">
+  <img src="docs/assets/hero.png" alt="A YAML test, its terminal output, and the Android phone it ran on showing 7+8 = 15" width="900">
+  <br><sub>A real run: an 8-step test driving the Calculator app on an Android 14 phone over Wi-Fi.</sub>
+</p>
 
-$ tethertrace test app-release.apk
-Installing app-release.apk…
-Exploring com.example.app…
-  new screen 1: Home
-  tap "Catalog" on screen 1
-  new screen 2: Catalog
-  tap "Open reviews" on screen 2
+<!-- Demo video: edit this README on github.com, drag the .mp4 onto this line, and GitHub embeds it. -->
 
-✖ app_crash: Crash report found in the device logs after launch.
-Crashed after tapping "Open reviews" on screen 2. Re-run: tethertrace run reports/test-…/repro.yaml
-  E AndroidRuntime: FATAL EXCEPTION: main
-Report: reports/test-com.example.app-…/report.html
+```bash
+npm install -g github:Saurabhzz9/tethertrace
+tethertrace pair 123456          # once, with the code from Wireless debugging
+tethertrace test app-release.apk # install, explore, catch crashes. No test code.
 ```
 
 ## Building an Android app? Just give it your APK
@@ -97,6 +92,8 @@ args = ["mcp"]
 
 Then ask: *"Install app-release.apk on my phone, open the login screen, try signing in with the test account and tell me why it fails."*
 
+<p align="center"><img src="docs/assets/mcp.png" alt="An AI agent's tool calls driving the phone, and the screenshot it received" width="900"></p>
+
 The agent gets these tools: `discover_devices`, `pair_device`, `select_device`, `device_info`, `list_apps`, `apk_info`, `screenshot`, `ui_tree`, `wait_for`, `tap`, `type_text`, `press_key`, `scroll`, `swipe`, `launch_app`, `stop_app`, `install_apk`, `app_logs`, `smoke_test`, `explore_app`, `run_flow`, `explain_report`.
 
 Safety switches: `--read-only` (look, never touch), `--package com.my.app` (only your app), `--allow-shell` (raw shell is off by default).
@@ -123,7 +120,23 @@ steps:
 tethertrace run login.yaml
 ```
 
-When a step fails you get the category, the screenshot, the list of what was on screen instead, and the app's own logs. Full reference: **[docs/flows.md](docs/flows.md)**.
+Every run writes an HTML report. When a step fails you get the category, the screenshot, the list of what was on screen instead, and the app's own logs. Full reference: **[docs/flows.md](docs/flows.md)**.
+
+<p align="center"><img src="docs/assets/report.png" alt="tethertrace HTML report: each step with its result and timing, and the screenshot" width="600"></p>
+
+### Let your AI write the tests for your app
+
+Flows are plain YAML written for *your* app: its screens, its labels, its ids. You don't have to write them by hand:
+
+- **From an AI agent.** With the MCP server connected, the agent can read your app's source code, open each screen on the phone, look at the real labels with `ui_tree`, write the YAML, run it with `run_flow`, and fix it until it passes. The server ships a ready-made prompt for this, `write_test` (in Claude Code it shows up as the slash command `/mcp__tethertrace__write_test`), or just ask:
+
+  > *"Write a tethertrace test for com.example.app that proves a user can log in with the test account. Read the source, check the real labels on my phone, save it to flows/login.yaml and run it until it passes."*
+
+- **From the explorer.** `tethertrace test app.apk` saves `explored-flow.yaml`, a working flow through every screen it reached, as a starting point.
+
+- **From `tethertrace ui`.** Open a screen and copy the labels and ids it prints.
+
+Keep your app's flows in your app's repo and run them on every build.
 
 ## Ask an AI why it failed (optional)
 
@@ -212,7 +225,7 @@ Version 0.1, early. What has been verified, and where:
 | MCP server | Driven over stdio by the official MCP SDK client against that phone: screenshot, UI tree, taps, logs, APK-only smoke test, `--read-only` enforcement |
 | Wire compatibility | Google's `adb` 1.0.41 pairs, connects and runs shell against tethertrace's protocol implementation (test harness) |
 | Zero-config `test` explorer | 4 automated tests against a mock app (safe screens, risky buttons skipped, crash + repro, replay of the generated flow); **not yet run on a real phone** |
-| Everything | 36 automated tests against a mock device |
+| Everything | 37 automated tests against a mock device |
 | Not yet verified | Other phone brands and Android versions, macOS/Linux with a real phone, each AI client's own setup (the MCP protocol itself is tested), iOS (not supported) |
 
 If you try it on another phone, please [tell us how it went](https://github.com/Saurabhzz9/tethertrace/discussions). That is the most useful contribution right now.
