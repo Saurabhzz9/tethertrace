@@ -13,6 +13,7 @@ All notable changes are listed here. The project follows [Semantic Versioning](h
 ### Changed
 
 - The explorer never taps switches, checkboxes or radio buttons, so it can't change an app's settings (found on a real phone).
+- When something other than the app is on screen, the explorer waits for transients (an app recreating itself after a language change) and otherwise closes system UI and brings the app back. It no longer presses back there, which on a real phone opened the launcher and notification shade and put personal notifications into a recording.
 - Screenshots retry when the phone returns an empty image, which happened during screen transitions.
 - Downscaled screenshots (MCP `screenshot`) are about 5× faster: the PNG is shrunk on the computer instead of pulling the raw framebuffer over Wi-Fi.
 - `@types/node` pinned to Node 22, the oldest supported version.
