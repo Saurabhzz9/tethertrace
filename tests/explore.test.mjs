@@ -130,3 +130,64 @@ test("the flow written by explore replays cleanly with `run`", async () => {
     await dev.close();
   }
 });
+
+/** An app plus the system around it: notification shade, launcher, permission dialog. */
+function appWithSystem({ shadeStaysOpen = false } = {}) {
+  const shade = screen("Notifications", ["Wi-Fi", "Naukri: companies are hiring", "Clear all"], "com.android.systemui");
+  const permission = screen("Allow Shop to take pictures?", ["While using the app", "Only this time", "Don't allow"], "com.google.android.permissioncontroller");
+  const screens = {
+    home: screen("Home", ["Change language", "Take photo", "Open shade"]),
+  };
+  const state = { overlay: null, transient: 0, taps: [], backs: 0, collapses: 0, alive: true };
+  const handler = (cmd, kind) => {
+    if (kind === "exec") return cmd.startsWith("screencap") ? TINY_PNG : "";
+    if (cmd.startsWith("date ")) return "11-07 20:00:00.000\n";
+    if (cmd.startsWith("am force-stop")) { state.alive = false; return ""; }
+    if (cmd.startsWith("cmd package resolve-activity")) return `${PKG}/.Main\n`;
+    if (cmd.startsWith("am start -W")) { state.alive = true; return "Status: ok\nTotalTime: 300\n"; }
+    if (cmd.startsWith("pidof")) return state.alive ? "4321\n" : "";
+    if (cmd === "cmd statusbar collapse") { state.collapses++; if (state.overlay === "shade") state.overlay = null; return ""; }
+    if (cmd === "input keyevent KEYCODE_BACK") { state.backs++; return ""; }
+    if (cmd.startsWith("uiautomator dump")) {
+      if (state.transient > 0) { state.transient--; return shade; }
+      if (state.overlay === "shade") return shade;
+      if (state.overlay === "permission") return permission;
+      return screens.home;
+    }
+    if (cmd.startsWith("input tap ")) {
+      const y = Number(cmd.split(" ")[3]);
+      const xml = state.transient > 0 || state.overlay === "shade" ? shade : state.overlay === "permission" ? permission : screens.home;
+      let l;
+      for (const m of xml.matchAll(/text="([^"]*)"[^>]*clickable="true" bounds="\[40,(\d+)\]\[1040,(\d+)\]"/g)) if (y >= Number(m[2]) && y <= Number(m[3])) l = m[1];
+      state.taps.push(l);
+      if (l === "Change language") state.transient = 2; // app recreates itself; system UI flashes
+      else if (l === "Take photo") state.overlay = "permission";
+      else if (l === "Don't allow") state.overlay = null;
+      else if (l === "Open shade") state.overlay = shadeStaysOpen ? "shade" : null;
+      return "";
+    }
+    return undefined;
+  };
+  return { state, handler };
+}
+
+test("explore never taps or presses back on system UI; it waits out transients and declines permissions", async () => {
+  const { state, handler } = appWithSystem({ shadeStaysOpen: true });
+  const dev = await startAdbd({ mode: "tls", trusted: [key.publicKeyString], handler });
+  const out = await mkdtemp(join(tmpdir(), "tt-explore-"));
+  try {
+    const d = await Device.connect({ host: "127.0.0.1", port: dev.port, key });
+    const s = await explore(d, { pkg: PKG, outDir: out, settleMs: 0, maxActions: 12 });
+    d.close();
+    for (const forbidden of ["Wi-Fi", "Naukri: companies are hiring", "Clear all", "While using the app", "Only this time"])
+      assert.ok(!state.taps.includes(forbidden), `tapped "${forbidden}" outside the app`);
+    assert.equal(state.backs, 0, "pressed back while outside the app");
+    assert.ok(state.taps.includes("Don't allow"), "declined the permission prompt");
+    assert.ok(state.collapses >= 1, "closed the notification shade");
+    assert.equal(s.verdict, "no_crash_observed", s.reason);
+    const actions = (await readFile(join(out, "actions.jsonl"), "utf8")).trim().split("\n").map((l) => JSON.parse(l));
+    assert.ok(actions.some((a) => a.action === "resume" && /systemui/.test(a.label)), "resumed the app after the shade");
+  } finally {
+    await dev.close();
+  }
+});

@@ -42,7 +42,7 @@ export interface ExploreScreen {
 export interface ExploreAction {
   t: string;
   screen: number;
-  action: "launch" | "tap" | "back" | "relaunch" | "deny_permission";
+  action: "launch" | "tap" | "back" | "relaunch" | "resume" | "deny_permission";
   label?: string;
   selector?: Record<string, unknown> | string;
   at?: [number, number];
@@ -148,6 +148,16 @@ export async function explore(d: Device, o: ExploreOptions): Promise<ExploreSumm
     await record({ screen: current, action: kind });
     await new Promise((r) => setTimeout(r, settle + 800));
   };
+  /** Return to the app: resume it if it's still alive, otherwise cold-start it. */
+  const bringBack = async (from: string) => {
+    if (await d.pidOf(o.pkg)) {
+      await d.launch(o.pkg); // brings the existing task to the front, keeping its state
+      await record({ screen: current, action: "resume", label: `returned from ${from || "unknown"}` });
+      await new Promise((r) => setTimeout(r, settle));
+      if (foreground(await d.uiNodes().catch(() => [] as UiNode[])) === o.pkg) return;
+    }
+    await launch("relaunch");
+  };
 
   let crashed = false;
   try {
@@ -176,17 +186,25 @@ export async function explore(d: Device, o: ExploreOptions): Promise<ExploreSumm
       }
       const fg = foreground(nodes);
       if (fg && fg !== o.pkg) {
-        // Left the app: decline a permission prompt, otherwise go back.
-        const decline = nodes.find((n) => n.clickable && PERMISSION_DENY.test(label(n)));
-        if (decline && /permissioncontroller|packageinstaller/.test(fg)) {
+        // Something else is on screen. Often it's transient (the app recreating itself after a language
+        // change or rotation), so look again before doing anything.
+        let other = nodes;
+        let otherFg = fg;
+        for (let i = 0; i < 3 && otherFg !== o.pkg; i++) {
+          await new Promise((r) => setTimeout(r, Math.max(200, Math.min(700, settle * 0.6))));
+          other = await d.uiNodes().catch(() => [] as UiNode[]);
+          otherFg = foreground(other);
+        }
+        if (otherFg === o.pkg) continue;
+        const decline = other.find((n) => n.clickable && PERMISSION_DENY.test(label(n)));
+        if (decline && /permissioncontroller|packageinstaller/.test(otherFg)) {
           await d.tapXY((decline.bounds[0] + decline.bounds[2]) / 2, (decline.bounds[1] + decline.bounds[3]) / 2);
           await record({ screen: current, action: "deny_permission", label: label(decline) });
         } else {
-          await d.key("back");
-          await record({ screen: current, action: "back", label: `left app (${fg})` });
-          await new Promise((r) => setTimeout(r, settle));
-          const again = await d.uiNodes().catch(() => [] as UiNode[]);
-          if (foreground(again) !== o.pkg) await launch("relaunch");
+          // Launcher, notification shade, keyboard or another app: never tap or press keys there (that can
+          // open the shade and put someone's notifications into a recording). Close system UI and bring the app back.
+          await d.shell("cmd statusbar collapse").catch(() => undefined);
+          await bringBack(otherFg);
         }
         summary.actions++;
         continue;
