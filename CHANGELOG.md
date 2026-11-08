@@ -8,6 +8,14 @@ All notable changes are listed here. The project follows [Semantic Versioning](h
 
 - MCP prompt `write_test`: asks the connected model to inspect the app (and its source), write a YAML flow for a goal, run it and fix it until it passes.
 - README screenshots from real runs, and a section on letting an AI write flows for your app.
+- Screen recording: `tethertrace record`, `--record` on `run`, `test` and `smoke`, `record_screen` and `record: true` in MCP. Uses Android's `screenrecord` when it works and falls back to continuous screenshots with a built-in player (plus an MP4 when ffmpeg is installed).
+
+### Changed
+
+- The explorer never taps switches, checkboxes or radio buttons, so it can't change an app's settings (found on a real phone).
+- Screenshots retry when the phone returns an empty image, which happened during screen transitions.
+- Downscaled screenshots (MCP `screenshot`) are about 5× faster: the PNG is shrunk on the computer instead of pulling the raw framebuffer over Wi-Fi.
+- `@types/node` pinned to Node 22, the oldest supported version.
 
 ## 0.1.0 — 2026-11-07
 

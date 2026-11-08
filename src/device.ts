@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { AdbConnection, AdbError, withTimeout, type ConnectOptions } from "./adb/connection.js";
-import { rawScreencapToPng } from "./image.js";
+import { downscalePng, rawScreencapToPng } from "./image.js";
 
 /** High-level device operations built on the raw ADB connection. */
 export class Device {
@@ -39,17 +39,24 @@ export class Device {
     return withTimeout(s.readAll(), timeoutMs, () => s.close(), new AdbError("TIMEOUT", `${command.split(" ")[0]} timed out`));
   }
 
-  screenshotPng() {
-    return this.execRaw("screencap -p");
+  /** Full-resolution PNG. screencap sometimes returns nothing mid-transition, so retry a couple of times. */
+  async screenshotPng() {
+    for (let attempt = 0; ; attempt++) {
+      const png = await this.execRaw("screencap -p");
+      if (isCompletePng(png)) return png;
+      if (attempt >= 2) throw new AdbError("PROTOCOL", "Screenshot unavailable (empty or partial image from the phone)");
+      await new Promise((r) => setTimeout(r, 150));
+    }
   }
 
   /** Downscaled PNG (scale 0.5 ≈ ¼ the bytes) for AI agents; falls back to full size if the raw format is unknown. */
   async screenshotScaled(scale = 0.5) {
     if (scale >= 1) return this.screenshotPng();
+    // Pull the compressed PNG (fast over Wi-Fi) and shrink it here; fall back to the raw framebuffer.
     try {
-      return rawScreencapToPng(await this.execRaw("screencap"), scale);
+      return downscalePng(await this.screenshotPng(), scale);
     } catch {
-      return this.screenshotPng();
+      return rawScreencapToPng(await this.execRaw("screencap"), scale);
     }
   }
 
@@ -325,6 +332,8 @@ export interface UiNode {
   bounds: [number, number, number, number];
   /** Package that owns this element (tells whether the app is still in the foreground). */
   pkg: string;
+  /** Switches, checkboxes and radio buttons: tapping them changes a setting. */
+  checkable: boolean;
 }
 
 const unescape = (s: string) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#10;/g, "\n").replace(/&amp;/g, "&");
@@ -342,10 +351,15 @@ export function parseUiNodes(xml: string): UiNode[] {
       pkg: attrs.package ?? "",
       cls: attrs.class ?? "",
       clickable: attrs.clickable === "true",
+      checkable: attrs.checkable === "true",
       bounds: b ? [Number(b[1]), Number(b[2]), Number(b[3]), Number(b[4])] : [0, 0, 0, 0],
     });
   }
   return nodes;
+}
+
+export function isCompletePng(b: Buffer) {
+  return b.length > 20 && b.readUInt32BE(0) === 0x89504e47 && b.subarray(b.length - 8, b.length - 4).toString("latin1") === "IEND";
 }
 
 export function assertPackage(pkg: string) {

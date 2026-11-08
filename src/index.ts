@@ -16,3 +16,4 @@ export { explainLocally, explainWithModel, loadReport, parseModelSpec } from "./
 export { rawScreencapToPng, encodePng } from "./image.js";
 export { VERSION } from "./version.js";
 export { explore, screenSignature, DEFAULT_DENY, type ExploreSummary, type ExploreOptions } from "./explore.js";
+export { Recording, attachRecording, nativeRecorderWorks, type RecordingOptions, type RecordingResult } from "./record.js";

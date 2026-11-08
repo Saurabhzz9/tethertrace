@@ -13,11 +13,9 @@ No `adb`. No Android SDK. No test code. No cloud. Works with Claude, Codex and l
 </div>
 
 <p align="center">
-  <img src="docs/assets/hero.png" alt="A YAML test, its terminal output, and the Android phone it ran on showing 7+8 = 15" width="900">
-  <br><sub>A real run: an 8-step test driving the Calculator app on an Android 14 phone over Wi-Fi.</sub>
+  <img src="docs/assets/demo.gif" alt="A YAML test running on an Android phone over Wi-Fi: the calculator computes 7+8×2 = 23" width="800">
+  <br><sub>A real run on an Android 14 phone. The phone footage was recorded by tethertrace itself (<code>--record</code>).</sub>
 </p>
-
-<!-- Demo video: edit this README on github.com, drag the .mp4 onto this line, and GitHub embeds it. -->
 
 ```bash
 npm install -g github:Saurabhzz9/tethertrace
@@ -37,7 +35,7 @@ That one command installs the APK over Wi-Fi, cold-starts it, **walks through yo
 - the exact tap that crashed the app, the crash lines, and a `repro.yaml` that reproduces it,
 - an `explored-flow.yaml` you can keep as a regression test and re-run with `tethertrace run`.
 
-It never types, declines permission prompts, and skips anything that looks destructive or outward-facing (delete, pay, buy, send, share, log out…, in English and Hindi). Add your own with `--deny "reset|archive"`.
+It never types, declines permission prompts, never flips switches or checkboxes, and skips anything that looks destructive or outward-facing (delete, pay, buy, send, share, log out…, in English and Hindi). Add your own with `--deny "reset|archive"`. Add `--record` to get a video of the whole run.
 
 Works with native Views, Jetpack Compose, Flutter and React Native, because it tests the built app, not your source code.
 
@@ -94,7 +92,7 @@ Then ask: *"Install app-release.apk on my phone, open the login screen, try sign
 
 <p align="center"><img src="docs/assets/mcp.png" alt="An AI agent's tool calls driving the phone, and the screenshot it received" width="900"></p>
 
-The agent gets these tools: `discover_devices`, `pair_device`, `select_device`, `device_info`, `list_apps`, `apk_info`, `screenshot`, `ui_tree`, `wait_for`, `tap`, `type_text`, `press_key`, `scroll`, `swipe`, `launch_app`, `stop_app`, `install_apk`, `app_logs`, `smoke_test`, `explore_app`, `run_flow`, `explain_report`.
+The agent gets these tools: `discover_devices`, `pair_device`, `select_device`, `device_info`, `list_apps`, `apk_info`, `screenshot`, `ui_tree`, `wait_for`, `tap`, `type_text`, `press_key`, `scroll`, `swipe`, `launch_app`, `stop_app`, `install_apk`, `app_logs`, `smoke_test`, `explore_app`, `run_flow`, `record_screen`, `explain_report`. Tests can record the screen with `record: true`.
 
 Safety switches: `--read-only` (look, never touch), `--package com.my.app` (only your app), `--allow-shell` (raw shell is off by default).
 
@@ -190,6 +188,7 @@ Or skip the code and give an agent the MCP server (above): it gets the same powe
 | `apps` · `apk-info <apk>` | Installed apps · package/version of an APK |
 | `install <apk>` · `launch <pkg>` · `stop <pkg>` | Install over Wi-Fi · cold start with launch time · force-stop |
 | `screenshot` · `ui` · `logs <pkg>` | Screen PNG · on-screen elements · one app's logcat |
+| `record` · `--record` | Record the screen on its own, or during `run`, `test` and `smoke` (saved in the report) |
 | `tap` · `type` · `key` · `scroll` | Interact by visible text, id or description |
 | `test <apk or package>` | Zero-config: install, explore screens, catch crashes, write report + flows |
 | `smoke` | Install (optional) → cold start → watch → evidence + verdict |
@@ -224,8 +223,9 @@ Version 0.1, early. What has been verified, and where:
 | Apps of different kinds on that phone | A Flutter app (install 81.6 MB, 20-step flow across 6 screens), system Settings (scroll, search + typing), the native Calculator (taps by id and label, result asserted), the Clock app (smoke) |
 | MCP server | Driven over stdio by the official MCP SDK client against that phone: screenshot, UI tree, taps, logs, APK-only smoke test, `--read-only` enforcement |
 | Wire compatibility | Google's `adb` 1.0.41 pairs, connects and runs shell against tethertrace's protocol implementation (test harness) |
-| Zero-config `test` explorer | 4 automated tests against a mock app (safe screens, risky buttons skipped, crash + repro, replay of the generated flow); **not yet run on a real phone** |
-| Everything | 37 automated tests against a mock device |
+| Zero-config `test` explorer | On that phone against a Flutter app: 10–15 screens per run, no crash, share buttons and 5 settings toggles correctly skipped; plus mock tests for crash + repro and replaying the generated flow |
+| Screen recording | On that phone, whose built-in `screenrecord` crashes: tethertrace fell back to screenshot frames (~4–6 fps) and produced the video at the top of this page |
+| Everything | 40 automated tests against a mock device |
 | Not yet verified | Other phone brands and Android versions, macOS/Linux with a real phone, each AI client's own setup (the MCP protocol itself is tested), iOS (not supported) |
 
 If you try it on another phone, please [tell us how it went](https://github.com/Saurabhzz9/tethertrace/discussions). That is the most useful contribution right now.

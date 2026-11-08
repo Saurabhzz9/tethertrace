@@ -5,15 +5,15 @@ import { join } from "node:path";
 import { test } from "node:test";
 import YAML from "yaml";
 import { AdbKey, Device, explore, DEFAULT_DENY } from "../dist/index.js";
-import { startAdbd } from "./helpers/mock-device.mjs";
+import { startAdbd, TINY_PNG } from "./helpers/mock-device.mjs";
 
 const PKG = "com.example.shop";
 const key = AdbKey.generate("test@host");
 
-const node = (text, y, { pkg = PKG, clickable = true, id = "" } = {}) =>
-  `<node text="${text}" content-desc="" resource-id="${id}" class="android.widget.Button" package="${pkg}" clickable="${clickable}" bounds="[40,${y}][1040,${y + 150}]" />`;
+const node = (text, y, { pkg = PKG, clickable = true, id = "", checkable = false } = {}) =>
+  `<node text="${text}" content-desc="" resource-id="${id}" class="android.widget.${checkable ? "Switch" : "Button"}" package="${pkg}" checkable="${checkable}" clickable="${clickable}" bounds="[40,${y}][1040,${y + 150}]" />`;
 const screen = (title, buttons, pkg = PKG) =>
-  `<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0"><node text="" content-desc="" resource-id="" class="android.widget.FrameLayout" package="${pkg}" clickable="false" bounds="[0,0][1080,2400]">${node(title, 100, { pkg, clickable: false })}${buttons.map((b, i) => node(b, 400 + i * 200, { pkg })).join("")}</node></hierarchy>`;
+  `<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0"><node text="" content-desc="" resource-id="" class="android.widget.FrameLayout" package="${pkg}" clickable="false" bounds="[0,0][1080,2400]">${node(title, 100, { pkg, clickable: false })}${buttons.map((b, i) => node(b.replace(/^toggle:/, ""), 400 + i * 200, { pkg, checkable: b.startsWith("toggle:") })).join("")}</node></hierarchy>`;
 
 /** A tiny fake app: Home → Catalog / Profile; Profile has a dangerous button; Catalog has one that crashes. */
 function fakeApp({ crashOn } = {}) {
@@ -21,7 +21,7 @@ function fakeApp({ crashOn } = {}) {
     home: screen("Home", ["Catalog", "Profile", "Delete account"]),
     catalog: screen("Catalog", ["Item 1", ...(crashOn ? [crashOn] : [])]),
     item: screen("Item details", []),
-    profile: screen("Profile", ["Log out", "Pay now"]),
+    profile: screen("Profile", ["Log out", "Pay now", "toggle:Daily notifications"]),
   };
   const nav = { home: { Catalog: "catalog", Profile: "profile" }, catalog: { "Item 1": "item" } };
   const state = { stack: ["home"], alive: true, taps: [], crashed: false };
@@ -32,7 +32,7 @@ function fakeApp({ crashOn } = {}) {
   };
   const handler = (cmd, kind) => {
     if (kind === "exec") {
-      if (cmd.startsWith("screencap")) return Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+      if (cmd.startsWith("screencap")) return TINY_PNG;
       if (cmd.includes("-b crash")) return state.crashed ? `11-07 20:00:05.000  4321  4321 E AndroidRuntime: FATAL EXCEPTION: main\n11-07 20:00:05.000  4321  4321 E AndroidRuntime: Process: ${PKG}, PID: 4321\n` : "";
       if (cmd.startsWith("logcat")) return "11-07 20:00:01.000  4321  4321 I shop: ready\n";
       return "";
@@ -76,6 +76,8 @@ test("explore walks every safe screen, never taps risky buttons, and writes a re
     d.close();
     assert.equal(s.verdict, "no_crash_observed", s.reason);
     assert.deepEqual(s.screens.map((x) => x.title).sort(), ["Catalog", "Home", "Item details", "Profile"]);
+    assert.ok(!state.taps.includes("Daily notifications"), "toggled a setting");
+    assert.ok(s.skippedAsRisky.includes("Daily notifications (toggle)"));
     for (const risky of ["Delete account", "Log out", "Pay now"]) {
       assert.ok(!state.taps.includes(risky), `tapped ${risky}`);
       assert.ok(s.skippedAsRisky.includes(risky), risky);

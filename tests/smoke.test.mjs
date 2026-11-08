@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { AdbKey, Device, smoke, classify, filterAppLog, parseUiNodes } from "../dist/index.js";
-import { startAdbd } from "./helpers/mock-device.mjs";
+import { startAdbd, TINY_PNG } from "./helpers/mock-device.mjs";
 
 const PKG = "com.example.notes";
 const key = AdbKey.generate("test@host");
@@ -14,7 +14,7 @@ const UI = `<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy r
 function phone({ crash = false, alive = true } = {}) {
   return (cmd, kind) => {
     if (kind === "exec") {
-      if (cmd.startsWith("screencap")) return Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+      if (cmd.startsWith("screencap")) return TINY_PNG;
       if (cmd.includes("-b crash")) return crash ? `11-07 20:00:01.000  4321  4321 E AndroidRuntime: FATAL EXCEPTION: main\n11-07 20:00:01.000  4321  4321 E AndroidRuntime: Process: ${PKG}, PID: 4321\n` : "";
       if (cmd.startsWith("logcat")) return `11-07 20:00:00.500  4321  4321 I flutter: home ready\n11-07 20:00:00.600  999  999 I OtherApp: secret user@example.com\n`;
       return "";

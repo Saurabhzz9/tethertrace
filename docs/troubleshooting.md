@@ -11,6 +11,7 @@
 | `UI hierarchy unavailable` | Secure screens (passwords, banking), games and custom canvases don't expose elements. Use `screenshot` and `tap` with x/y. |
 | `UNSUPPORTED_TEXT` | `type` can only send ASCII. For other scripts, paste via the app or test with ids. |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | A version signed with a different key is installed. Uninstall it on the phone first. |
+| Recording says "screenshot frames" | The phone's built-in `screenrecord` is missing or crashes (seen on some MediaTek/ColorOS builds). tethertrace records continuous screenshots instead (~4–6 fps) and builds `recording/index.html`; install ffmpeg if you also want an MP4. |
 | `INSTALL_FAILED_USER_RESTRICTED` | Some brands (Xiaomi, OPPO/realme, vivo) need "Install via USB/ADB" enabled in Developer options, or ask for confirmation on the phone. |
 
 ## Where things live

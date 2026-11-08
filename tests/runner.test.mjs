@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { AdbKey, Device, findNodes, pickOne, parseUiNodes, runFlow, loadFlow } from "../dist/index.js";
-import { startAdbd } from "./helpers/mock-device.mjs";
+import { startAdbd, TINY_PNG } from "./helpers/mock-device.mjs";
 
 const PKG = "com.example.notes";
 const key = AdbKey.generate("test@host");
@@ -25,7 +25,7 @@ const HOME = WELCOME.replace(/शुरू करें/g, "आज का पं
 function app() {
   const state = { screen: "welcome", taps: [], typed: [] };
   const handler = (cmd, kind) => {
-    if (kind === "exec") return cmd.startsWith("screencap") ? Buffer.from([0x89, 0x50]) : "";
+    if (kind === "exec") return cmd.startsWith("screencap") ? TINY_PNG : "";
     if (cmd.startsWith("date ")) return "11-07 20:00:00.000\n";
     if (cmd.startsWith("am force-stop")) return "";
     if (cmd.startsWith("cmd package resolve-activity")) return `${PKG}/.MainActivity\n`;

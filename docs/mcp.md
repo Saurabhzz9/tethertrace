@@ -86,6 +86,7 @@ tethertrace explain reports/<run> -m openai-compatible:<model> --base-url http:/
 | `apk_info` | no | Package/version/SDKs of a local APK |
 | `screenshot` | no | PNG of the screen (half size by default to save tokens) |
 | `ui_tree` | no | Every visible label/button with ids and bounds |
+| `record_screen` | no | Record the screen for N seconds; `run_flow`, `explore_app` and `smoke_test` also take `record: true` |
 | `wait_for` | no | Wait for an element to appear or disappear |
 | `app_logs` | no | One app's logcat and crash buffer |
 | `explain_report` | no | Summary of a report folder |

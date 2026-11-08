@@ -12,6 +12,7 @@ import { pair } from "./adb/pairing.js";
 import { assertPackage, Device, SelectorError, type Selector } from "./device.js";
 import { explainLocally, loadReport } from "./explain.js";
 import { explore } from "./explore.js";
+import { Recording, attachRecording, recordWhile } from "./record.js";
 import { runFlow, type Flow } from "./runner.js";
 import { formatNodes, smoke } from "./smoke.js";
 import { VERSION } from "./version.js";
@@ -220,6 +221,28 @@ export function createMcpServer(key: AdbKey, o: McpOptions = {}) {
   );
 
   server.registerTool(
+    "record_screen",
+    {
+      description: "Record the phone screen for a number of seconds (while the user or another tool uses the phone). Returns where the video was saved. Uses the phone's recorder, or continuous screenshots if it is unavailable.",
+      inputSchema: { seconds: z.number().min(1).max(600) },
+      annotations: ro,
+    },
+    async ({ seconds }) => {
+      try {
+        const outDir = join(reportsDir, `recording-${stamp()}`);
+        const names = await session.with(async (d) => {
+          const r = await Recording.start(d, { maxSeconds: seconds });
+          await r.finished();
+          return attachRecording(outDir, await r.stop());
+        });
+        return text(names.map((n) => join(outDir, n)).join("\n"));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
     "ui_tree",
     { description: "List what is on screen: one line per visible text/button with [tap] markers, resource ids and pixel bounds. Use this to choose tap targets.", inputSchema: {}, annotations: ro },
     async () => {
@@ -379,7 +402,7 @@ export function createMcpServer(key: AdbKey, o: McpOptions = {}) {
       "smoke_test",
       {
         description: "Optionally install an APK, cold-start the app, watch it, and save evidence (screenshot, UI, app logs, memory, launch time) with an honest verdict. Package is read from the APK if omitted.",
-        inputSchema: { package: z.string().optional(), apkPath: z.string().optional(), waitSeconds: z.number().min(1).max(120).optional() },
+        inputSchema: { package: z.string().optional(), apkPath: z.string().optional(), waitSeconds: z.number().min(1).max(120).optional(), record: z.boolean().optional().describe("Also record the phone screen into the report") },
         annotations: act,
       },
       async (a) => {
@@ -388,7 +411,7 @@ export function createMcpServer(key: AdbKey, o: McpOptions = {}) {
           if (!pkg) throw new Error("Give package or apkPath");
           checkPkg(pkg);
           const outDir = join(reportsDir, `smoke-${pkg}-${stamp()}`);
-          const s = await session.with((d) => smoke(d, { pkg, apk: a.apkPath, waitMs: (a.waitSeconds ?? 8) * 1000, outDir, screenshot: true }));
+          const s = await session.with((d) => recordWhile(d, a.record, outDir, () => smoke(d, { pkg, apk: a.apkPath, waitMs: (a.waitSeconds ?? 8) * 1000, outDir, screenshot: true })));
           return text(`${JSON.stringify(s, null, 2)}\n\nReport: ${join(outDir, "report.html")}`);
         } catch (e) {
           return fail(e);
@@ -406,6 +429,7 @@ export function createMcpServer(key: AdbKey, o: McpOptions = {}) {
           apkPath: z.string().optional(),
           maxActions: z.number().int().min(1).max(300).optional(),
           minutes: z.number().min(0.5).max(30).optional(),
+          record: z.boolean().optional().describe("Also record the phone screen into the report"),
         },
         annotations: act,
       },
@@ -417,7 +441,7 @@ export function createMcpServer(key: AdbKey, o: McpOptions = {}) {
           const outDir = join(reportsDir, `test-${pkg}-${stamp()}`);
           const s = await session.with(async (d) => {
             if (a.apkPath) await d.install(a.apkPath);
-            return explore(d, { pkg, outDir, maxActions: a.maxActions, timeBudgetMs: (a.minutes ?? 4) * 60_000 });
+            return recordWhile(d, a.record, outDir, () => explore(d, { pkg, outDir, maxActions: a.maxActions, timeBudgetMs: (a.minutes ?? 4) * 60_000 }));
           });
           return text(`${JSON.stringify(s, null, 2)}\n\nReport: ${join(outDir, "report.html")}\nGenerated flow: ${join(outDir, "explored-flow.yaml")}`);
         } catch (e) {
@@ -431,7 +455,7 @@ export function createMcpServer(key: AdbKey, o: McpOptions = {}) {
       {
         description:
           "Run a YAML test flow (file path or inline YAML) and return the result with the failing step, category and evidence. Steps: launch, tap, longPress, type, key, back, home, waitFor, assertVisible, assertHidden, scroll, sleep, screenshot.",
-        inputSchema: { path: z.string().optional(), yaml: z.string().optional() },
+        inputSchema: { path: z.string().optional(), yaml: z.string().optional(), record: z.boolean().optional().describe("Also record the phone screen into the report") },
         annotations: act,
       },
       async (a) => {
@@ -443,7 +467,7 @@ export function createMcpServer(key: AdbKey, o: McpOptions = {}) {
           checkPkg(doc.app);
           const flow: Flow = { app: doc.app, name: String(doc.name ?? "flow"), steps: doc.steps };
           const outDir = join(reportsDir, `${flow.name.replace(/[^\w-]/g, "_")}-${stamp()}`);
-          const s = await session.with((d) => runFlow(d, flow, { outDir }));
+          const s = await session.with((d) => recordWhile(d, a.record, outDir, () => runFlow(d, flow, { outDir })));
           return text(`${JSON.stringify(s, null, 2)}\n\nReport: ${join(outDir, "report.html")}`);
         } catch (e) {
           return fail(e);

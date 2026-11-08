@@ -11,7 +11,8 @@ import { classify, filterAppLog, formatNodes } from "./smoke.js";
  * watches for crashes, and writes a report plus ready-to-run YAML flows. No test code needed.
  *
  * Safety: it only taps elements that belong to the app, skips anything that looks destructive or
- * outward-facing (delete, pay, send, share, log out…), never types, and declines permission prompts.
+ * outward-facing (delete, pay, send, share, log out…) and every switch/checkbox, never types, and
+ * declines permission prompts.
  */
 
 export const DEFAULT_DENY =
@@ -218,6 +219,11 @@ export async function explore(d: Device, o: ExploreOptions): Promise<ExploreSumm
         if (!l) return false; // unlabeled controls could be anything; skip them
         if (deny(l)) {
           risky.add(l);
+          return false;
+        }
+        // Switches/checkboxes change the app's settings; exploring must not.
+        if (n.checkable || /Switch|CheckBox|RadioButton|ToggleButton/.test(n.cls)) {
+          risky.add(`${l} (toggle)`);
           return false;
         }
         return !tried.has(`${sig}|${l}|${n.id}`);
