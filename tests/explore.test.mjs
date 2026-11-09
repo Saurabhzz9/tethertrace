@@ -209,7 +209,7 @@ test("explore skips window-mode controls and full-screen backdrops (both seen on
 });
 
 test("explore leaves the phone in the app when its last tap opened something else", async () => {
-  const home = screen("Palm reading", ["Gallery"]);
+  const home = screen("Home", ["Attach photo"]);
   const picker = screen("Photos", ["Recent", "Albums"], "com.google.android.photopicker");
   const state = { alive: true, stack: ["home"], taps: [], backs: 0 };
   const handler = (cmd, kind) => {
