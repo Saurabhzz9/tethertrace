@@ -36,7 +36,7 @@ That one command installs the APK over Wi-Fi, cold-starts it, **walks through yo
 - an `explored-flow.yaml` you can keep as a regression test and re-run with `tethertrace run`,
 - a coverage level next to the verdict (`ok`, `limited` or `none`), so "no crash observed" on a canvas UI or game it couldn't tap never looks like a pass.
 
-It never types, declines permission prompts, never flips switches or checkboxes, and skips anything that looks destructive or outward-facing (delete, pay, buy, send, share, log out…, in English and Hindi). Add your own with `--deny "reset|archive"`. Add `--record` to get a video of the whole run.
+It never types, declines permission prompts, never flips switches or checkboxes, never opens floating windows or picture-in-picture, and skips anything that looks destructive or outward-facing (delete, pay, buy, send, share, log out…, in English and Hindi). Add your own with `--deny "reset|archive"`. Add `--record` to get a video of the whole run.
 
 Works with native Views, Jetpack Compose, Flutter and React Native, because it tests the built app, not your source code.
 

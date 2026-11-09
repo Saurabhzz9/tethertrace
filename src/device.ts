@@ -116,11 +116,17 @@ export class Device {
   }
 
   /** Cold-launch the app's launcher activity; returns Android's own launch timing when reported. */
-  async launch(pkg: string) {
+  /**
+   * Start the app's launcher activity in a clean task. Pass `resume: true` to bring an existing task to
+   * the front as it is instead. A clean task matters after a force-stop: activities from other apps that
+   * the app opened (a photo picker, a share sheet) survive in its task, and a plain start would only
+   * show them again without starting the app.
+   */
+  async launch(pkg: string, { resume = false }: { resume?: boolean } = {}) {
     assertPackage(pkg);
     const resolved = (await this.shell(`cmd package resolve-activity --brief -c android.intent.category.LAUNCHER ${pkg}`)).text.trim().split("\n").pop()!.trim();
     if (!/^[\w.]+\/[\w.$]+$/.test(resolved)) throw new AdbError("PROTOCOL", `No launcher activity found for ${pkg}`);
-    const r = await this.shell(`am start -W -n ${resolved}`, 60_000);
+    const r = await this.shell(`am start -W${resume ? "" : " --activity-clear-task"} -n ${resolved}`, 60_000);
     const total = /TotalTime:\s*(\d+)/.exec(r.text);
     const status = /Status:\s*(\w+)/.exec(r.text);
     return { activity: resolved, totalTimeMs: total ? Number(total[1]) : undefined, status: status?.[1], raw: r.text.trim() };
