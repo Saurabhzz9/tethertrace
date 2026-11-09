@@ -6,6 +6,7 @@ All notable changes are listed here. The project follows [Semantic Versioning](h
 
 ### Added
 
+- Agent skill `skills/tethertrace/SKILL.md` for Claude Code, Codex and other agents that read SKILL.md: when to use tethertrace, which command fits, how to write flows from real labels, how to read verdicts and coverage, and safety rules. Included in the npm package.
 - MCP prompt `write_test`: asks the connected model to inspect the app (and its source), write a YAML flow for a goal, run it and fix it until it passes.
 - README screenshots from real runs, and a section on letting an AI write flows for your app.
 - Screen recording: `tethertrace record`, `--record` on `run`, `test` and `smoke`, `record_screen` and `record: true` in MCP. Uses Android's `screenrecord` when it works and falls back to continuous screenshots with a built-in player (plus an MP4 when ffmpeg is installed).
