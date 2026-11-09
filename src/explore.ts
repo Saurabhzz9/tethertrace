@@ -94,6 +94,10 @@ export interface ExploreSummary {
 
 const label = (n: UiNode) => (n.text || n.desc).split(/\s*\n\s*/).filter(Boolean).join(" / ");
 const area = (n: UiNode) => (n.bounds[2] - n.bounds[0]) * (n.bounds[3] - n.bounds[1]);
+const within = (inner: UiNode, outer: UiNode) =>
+  inner.bounds[0] >= outer.bounds[0] && inner.bounds[1] >= outer.bounds[1] && inner.bounds[2] <= outer.bounds[2] && inner.bounds[3] <= outer.bounds[3];
+const isToggle = (n: UiNode) => n.checkable || /Switch|CheckBox|RadioButton|ToggleButton/.test(n.cls);
+const TOGGLE_ID = /(^|[_\W])(switch|toggle|checkbox)([_\W]|$)/i;
 
 function foreground(nodes: UiNode[]) {
   const counts = new Map<string, number>();
@@ -276,8 +280,10 @@ export async function explore(d: Device, o: ExploreOptions): Promise<ExploreSumm
           risky.add(l);
           return false;
         }
-        // Switches/checkboxes change the app's settings; exploring must not.
-        if (n.checkable || /Switch|CheckBox|RadioButton|ToggleButton/.test(n.cls)) {
+        // Switches/checkboxes change the app's settings; exploring must not. That includes the row or
+        // area around a switch (tapping it flips the switch; on a real phone it turned off an alarm)
+        // and controls whose id says they are one.
+        if (isToggle(n) || TOGGLE_ID.test(n.id.replace(/^.*:id\//, "")) || (area(n) < screenArea * 0.25 && nodes.some((m) => m !== n && isToggle(m) && within(m, n)))) {
           risky.add(`${l} (toggle)`);
           return false;
         }
