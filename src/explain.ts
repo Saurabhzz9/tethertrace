@@ -53,6 +53,7 @@ export function explainLocally(b: ReportBundle): string {
     device?: { manufacturer: string; model: string; androidVersion: string };
     launchTimeMs?: number;
     launch?: { totalTimeMs?: number };
+    coverage?: { level: string; tapped: number; warnings: string[] };
   };
   const lines: string[] = [];
   const dev = s.device ? `${s.device.manufacturer} ${s.device.model}, Android ${s.device.androidVersion}` : "unknown device";
@@ -67,6 +68,10 @@ export function explainLocally(b: ReportBundle): string {
     lines.push(NEXT_STEPS[s.failure.category] ?? "Next: open report.html and check logcat.txt around the failing step.");
   } else if (s.verdict) {
     lines.push(`Result: ${s.verdict} — ${s.reason ?? ""}`);
+    if (s.coverage) {
+      lines.push(`Coverage: ${s.coverage.level} (${s.coverage.tapped} controls tapped)`);
+      for (const w of s.coverage.warnings) lines.push(`  ${w}`);
+    }
   } else lines.push(`Result: ${s.status}`);
   return lines.join("\n");
 }

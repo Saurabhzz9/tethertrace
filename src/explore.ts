@@ -49,6 +49,25 @@ export interface ExploreAction {
   ledTo?: number;
 }
 
+/**
+ * How much of the app the explorer could actually reach. "No crash observed" means little if it
+ * couldn't tap anything, so this sits next to the verdict.
+ * - ok: it tried every labeled, safe control it found
+ * - limited: some screens or controls were out of reach, or it hit the action/time limit
+ * - none: it found nothing it could tap (canvas, game, WebView without accessibility, secure screen)
+ */
+export interface ExploreCoverage {
+  level: "ok" | "limited" | "none";
+  /** Distinct controls it tapped. */
+  tapped: number;
+  /** Clickable controls in the app with no text, description or id; skipped because they could do anything. */
+  unlabeledSkipped: number;
+  /** Screens where the app exposed no readable element at all (typical of canvas UIs and games). */
+  screensWithoutElements: number[];
+  stoppedBy: "explored" | "limit" | "crash" | "ui_unavailable" | "error";
+  warnings: string[];
+}
+
 export interface ExploreSummary {
   tool: "tethertrace";
   schemaVersion: "0.1";
@@ -64,6 +83,7 @@ export interface ExploreSummary {
   screens: ExploreScreen[];
   actions: number;
   skippedAsRisky: string[];
+  coverage: ExploreCoverage;
   files: string[];
   privacy: string;
 }
@@ -121,6 +141,7 @@ export async function explore(d: Device, o: ExploreOptions): Promise<ExploreSumm
     screens: [],
     actions: 0,
     skippedAsRisky: [],
+    coverage: { level: "ok", tapped: 0, unlabeledSkipped: 0, screensWithoutElements: [], stoppedBy: "limit", warnings: [] },
     files,
     privacy: "Explorer never types. Screenshots, on-screen text and app logs can still contain personal data. Review before sharing.",
   };
@@ -134,6 +155,9 @@ export async function explore(d: Device, o: ExploreOptions): Promise<ExploreSumm
   const bySig = new Map<string, ExploreScreen>();
   const tried = new Set<string>();
   const risky = new Set<string>();
+  const unlabeled = new Set<string>();
+  const blind: number[] = [];
+  let stoppedBy: ExploreCoverage["stoppedBy"] = "limit";
   const pids = new Set<number>();
   const pathFromLaunch: ExploreAction[] = [];
   let current = 0;
@@ -174,6 +198,7 @@ export async function explore(d: Device, o: ExploreOptions): Promise<ExploreSumm
       if (pid) pids.add(pid);
       else {
         crashed = true;
+        stoppedBy = "crash";
         break;
       }
       let nodes: UiNode[];
@@ -181,7 +206,10 @@ export async function explore(d: Device, o: ExploreOptions): Promise<ExploreSumm
         nodes = await d.uiNodes();
       } catch {
         await new Promise((r) => setTimeout(r, 600));
-        if (++stuck > 3) break;
+        if (++stuck > 3) {
+          stoppedBy = "ui_unavailable";
+          break;
+        }
         continue;
       }
       const fg = foreground(nodes);
@@ -216,6 +244,7 @@ export async function explore(d: Device, o: ExploreOptions): Promise<ExploreSumm
         screen = { id: bySig.size + 1, signature: sig, title: titleNode ? label(titleNode).slice(0, 60) : `screen ${bySig.size + 1}`, elements: nodes.length };
         bySig.set(sig, screen);
         summary.screens.push(screen);
+        if (!nodes.some((x) => x.pkg === o.pkg && label(x))) blind.push(screen.id);
         log(`  new screen ${screen.id}: ${screen.title}`);
         try {
           screen.screenshot = `screen-${screen.id}.png`;
@@ -234,7 +263,10 @@ export async function explore(d: Device, o: ExploreOptions): Promise<ExploreSumm
         if (!n.clickable || area(n) < 400 || n.pkg !== o.pkg) return false;
         if (/EditText|AutoCompleteTextView/.test(n.cls)) return false;
         const l = label(n) || n.id.replace(/^.*:id\//, "");
-        if (!l) return false; // unlabeled controls could be anything; skip them
+        if (!l) {
+          unlabeled.add(`${sig}|${n.bounds.join(",")}`); // unlabeled controls could be anything; skip them, but say so
+          return false;
+        }
         if (deny(l)) {
           risky.add(l);
           return false;
@@ -247,7 +279,10 @@ export async function explore(d: Device, o: ExploreOptions): Promise<ExploreSumm
         return !tried.has(`${sig}|${l}|${n.id}`);
       });
       if (!candidates.length) {
-        if (current === 1 || !pathFromLaunch.length) break; // home screen fully explored
+        if (current === 1 || !pathFromLaunch.length) {
+          stoppedBy = "explored"; // home screen fully explored
+          break;
+        }
         await d.key("back");
         await record({ screen: current, action: "back" });
         pathFromLaunch.pop();
@@ -269,6 +304,7 @@ export async function explore(d: Device, o: ExploreOptions): Promise<ExploreSumm
       await new Promise((r) => setTimeout(r, settle));
     }
   } catch (e) {
+    stoppedBy = "error";
     if (e instanceof AdbError && (e.code === "CLOSED" || e.code === "TIMEOUT")) {
       summary.verdict = "device_disconnected";
       summary.reason = `Lost the phone mid-run: ${e.message}`;
@@ -303,6 +339,11 @@ export async function explore(d: Device, o: ExploreOptions): Promise<ExploreSumm
     }
   }
 
+  summary.coverage = coverage(tried.size, unlabeled.size, blind, stoppedBy);
+  // "No crash" is only as strong as what was reached, so say it in the same sentence.
+  if (summary.verdict === "no_crash_observed" && summary.coverage.level !== "ok")
+    summary.reason += ` Coverage ${summary.coverage.level}: ${summary.coverage.warnings[0]}`;
+
   // Turn what happened into flows a developer can keep and re-run.
   // Replayable: taps, the explorer's own backs, and relaunches, in order.
   const steps = (path: ExploreAction[]) => [
@@ -322,6 +363,22 @@ export async function explore(d: Device, o: ExploreOptions): Promise<ExploreSumm
   return summary;
 }
 
+export function coverage(tapped: number, unlabeledSkipped: number, screensWithoutElements: number[], stoppedBy: ExploreCoverage["stoppedBy"]): ExploreCoverage {
+  const warnings: string[] = [];
+  if (tapped === 0)
+    warnings.push(
+      "nothing in the app could be tapped, so this run only covers launching and idling. Canvas UIs, games, WebViews without accessibility and secure screens don't expose elements; test them with a flow that taps by x/y.",
+    );
+  if (screensWithoutElements.length)
+    warnings.push(`screen${screensWithoutElements.length > 1 ? "s" : ""} ${screensWithoutElements.join(", ")} exposed no readable elements (canvas or custom drawing), so nothing there was tried.`);
+  if (unlabeledSkipped)
+    warnings.push(`${unlabeledSkipped} clickable control${unlabeledSkipped > 1 ? "s" : ""} had no text, description or id and ${unlabeledSkipped > 1 ? "were" : "was"} skipped. Adding a contentDescription makes them testable (and accessible).`);
+  if (stoppedBy === "limit") warnings.push("stopped at the action/time limit before trying everything. Raise --actions or --minutes for more.");
+  if (stoppedBy === "ui_unavailable") warnings.push("the screen stopped exposing its elements (secure screen or uiautomator busy), so exploring ended early.");
+  const level = tapped === 0 ? "none" : warnings.length ? "limited" : "ok";
+  return { level, tapped, unlabeledSkipped, screensWithoutElements, stoppedBy, warnings };
+}
+
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 function renderExploreHtml(s: ExploreSummary) {
@@ -332,8 +389,9 @@ function renderExploreHtml(s: ExploreSummary) {
 .g{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}.g figure{margin:0}.g img{width:100%;border:1px solid #ccc;border-radius:8px}
 figcaption{font-size:12px;color:#555}pre{background:#fff;border:1px solid #ddd;padding:12px;overflow:auto;font-size:12px}</style>
 <h1>${esc(s.package)}</h1>
-<p><span class="v">${esc(s.verdict)}</span> ${esc(s.reason)}</p>
-<p>${esc(s.device.manufacturer)} ${esc(s.device.model)} · Android ${esc(s.device.androidVersion)}${s.launchTimeMs !== undefined ? ` · cold start ${s.launchTimeMs} ms` : ""} · ${s.screens.length} screens · ${s.actions} actions</p>
+<p><span class="v">${esc(s.verdict)}</span> <span class="v" style="background:${s.coverage.level === "ok" ? "#2e7d32" : s.coverage.level === "limited" ? "#b26a00" : "#c62828"}">coverage: ${s.coverage.level}</span> ${esc(s.reason)}</p>
+${s.coverage.warnings.length ? `<ul>${s.coverage.warnings.map((w) => `<li>${esc(w.charAt(0).toUpperCase() + w.slice(1))}</li>`).join("")}</ul>` : ""}
+<p>${esc(s.device.manufacturer)} ${esc(s.device.model)} · Android ${esc(s.device.androidVersion)}${s.launchTimeMs !== undefined ? ` · cold start ${s.launchTimeMs} ms` : ""} · ${s.screens.length} screens · ${s.actions} actions · ${s.coverage.tapped} controls tapped</p>
 ${s.crashAfter ? `<p><b>Crashed after:</b> tapping "${esc(s.crashAfter.label ?? "?")}" on screen ${s.crashAfter.screen}. Re-run it with <code>tethertrace run repro.yaml</code>.</p>` : ""}
 ${s.evidence.length ? `<h2>Crash evidence</h2><pre>${esc(s.evidence.join("\n"))}</pre>` : ""}
 <h2>Screens</h2><div class="g">${s.screens.map((sc) => `<figure>${sc.screenshot ? `<img src="${esc(sc.screenshot)}" alt="">` : ""}<figcaption>${sc.id}. ${esc(sc.title)}</figcaption></figure>`).join("")}</div>

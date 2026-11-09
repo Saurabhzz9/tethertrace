@@ -9,6 +9,7 @@ All notable changes are listed here. The project follows [Semantic Versioning](h
 - MCP prompt `write_test`: asks the connected model to inspect the app (and its source), write a YAML flow for a goal, run it and fix it until it passes.
 - README screenshots from real runs, and a section on letting an AI write flows for your app.
 - Screen recording: `tethertrace record`, `--record` on `run`, `test` and `smoke`, `record_screen` and `record: true` in MCP. Uses Android's `screenrecord` when it works and falls back to continuous screenshots with a built-in player (plus an MP4 when ffmpeg is installed).
+- Explorer coverage: `coverage.level` (`ok`, `limited`, `none`) next to the verdict in the report, CLI, `summary.json` and MCP, with plain warnings when nothing could be tapped (canvas UIs, games, secure screens), when screens exposed no elements, when unlabeled controls were skipped, or when the action/time limit was hit.
 
 ### Changed
 

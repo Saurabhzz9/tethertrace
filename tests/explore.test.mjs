@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import YAML from "yaml";
-import { AdbKey, Device, explore, DEFAULT_DENY } from "../dist/index.js";
+import { AdbKey, Device, explore, coverage, DEFAULT_DENY } from "../dist/index.js";
 import { startAdbd, TINY_PNG } from "./helpers/mock-device.mjs";
 
 const PKG = "com.example.shop";
@@ -83,6 +83,9 @@ test("explore walks every safe screen, never taps risky buttons, and writes a re
       assert.ok(s.skippedAsRisky.includes(risky), risky);
     }
     assert.equal(s.launchTimeMs, 420);
+    assert.equal(s.coverage.level, "ok", s.coverage.warnings.join(" "));
+    assert.equal(s.coverage.stoppedBy, "explored");
+    assert.ok(s.coverage.tapped >= 3);
     const flow = YAML.parse(await readFile(join(out, "explored-flow.yaml"), "utf8"));
     assert.equal(flow.app, PKG);
     assert.deepEqual(flow.steps.slice(0, 5), ["launch", { tap: "Catalog" }, { tap: "Item 1" }, "back", "back"]);
@@ -129,6 +132,50 @@ test("the flow written by explore replays cleanly with `run`", async () => {
   } finally {
     await dev.close();
   }
+});
+
+test("explore says so when it could tap nothing (canvas UI), next to the verdict", async () => {
+  const canvas = `<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0"><node text="" content-desc="" resource-id="" class="android.widget.FrameLayout" package="${PKG}" clickable="false" bounds="[0,0][1080,2400]"><node text="" content-desc="" resource-id="" class="android.view.SurfaceView" package="${PKG}" clickable="true" bounds="[0,0][1080,2400]" /></node></hierarchy>`;
+  const taps = [];
+  const handler = (cmd, kind) => {
+    if (kind === "exec") return cmd.startsWith("screencap") ? TINY_PNG : "";
+    if (cmd.startsWith("date ")) return "11-07 20:00:00.000\n";
+    if (cmd.startsWith("am force-stop")) return "";
+    if (cmd.startsWith("cmd package resolve-activity")) return `${PKG}/.Main\n`;
+    if (cmd.startsWith("am start -W")) return "Status: ok\nTotalTime: 300\n";
+    if (cmd.startsWith("pidof")) return "4321\n";
+    if (cmd.startsWith("uiautomator dump")) return canvas;
+    if (cmd.startsWith("input tap ")) { taps.push(cmd); return ""; }
+    return undefined;
+  };
+  const dev = await startAdbd({ mode: "tls", trusted: [key.publicKeyString], handler });
+  const out = await mkdtemp(join(tmpdir(), "tt-explore-"));
+  try {
+    const d = await Device.connect({ host: "127.0.0.1", port: dev.port, key });
+    const s = await explore(d, { pkg: PKG, outDir: out, settleMs: 0, maxActions: 10 });
+    d.close();
+    assert.equal(taps.length, 0);
+    assert.equal(s.verdict, "no_crash_observed");
+    assert.equal(s.coverage.level, "none");
+    assert.equal(s.coverage.unlabeledSkipped, 1);
+    assert.deepEqual(s.coverage.screensWithoutElements, [1]);
+    assert.match(s.reason, /Coverage none: nothing in the app could be tapped/);
+    assert.match(await readFile(join(out, "report.html"), "utf8"), /coverage: none/);
+    assert.equal(JSON.parse(await readFile(join(out, "summary.json"), "utf8")).coverage.level, "none");
+  } finally {
+    await dev.close();
+  }
+});
+
+test("coverage is limited, not ok, when controls were unlabeled or the budget ran out", () => {
+  const c = coverage(6, 2, [4], "limit");
+  assert.equal(c.level, "limited");
+  assert.equal(c.warnings.length, 3);
+  assert.match(c.warnings.join(" "), /2 clickable controls had no text/);
+  assert.match(c.warnings.join(" "), /screen 4 exposed no readable elements/);
+  assert.match(c.warnings.join(" "), /--actions or --minutes/);
+  assert.equal(coverage(6, 0, [], "explored").level, "ok");
+  assert.equal(coverage(0, 0, [], "explored").level, "none");
 });
 
 /** An app plus the system around it: notification shade, launcher, permission dialog. */

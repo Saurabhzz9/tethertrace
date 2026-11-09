@@ -97,7 +97,7 @@ tethertrace explain reports/<run> -m openai-compatible:<model> --base-url http:/
 | `launch_app` · `stop_app` | yes | Cold start (with launch time) · force-stop |
 | `install_apk` | yes | Install a local APK over Wi-Fi |
 | `smoke_test` | yes | Install → launch → watch → evidence and verdict |
-| `explore_app` | yes | Zero-config: install, walk the screens (skipping risky buttons), catch crashes, write flows |
+| `explore_app` | yes | Zero-config: install, walk the screens (skipping risky buttons), catch crashes, write flows; returns `coverage.level` so "no crash" on a screen it couldn't tap isn't read as a pass |
 | `run_flow` | yes | Run a YAML flow (file or inline) and return the result |
 | `shell` | yes | Only with `--allow-shell` |
 

@@ -423,7 +423,7 @@ export function createMcpServer(key: AdbKey, o: McpOptions = {}) {
       "explore_app",
       {
         description:
-          "Zero-config test of any app: optionally install an APK, then walk its screens by tapping visible controls (skipping anything destructive or outward-facing, never typing), watch for crashes, and save screenshots, a report and generated YAML flows (repro.yaml when it crashes).",
+          "Zero-config test of any app: optionally install an APK, then walk its screens by tapping visible controls (skipping anything destructive or outward-facing, never typing), watch for crashes, and save screenshots, a report and generated YAML flows (repro.yaml when it crashes). Read coverage next to the verdict: level \"none\" means nothing could be tapped (canvas, game, secure screen), so no_crash_observed only covers launching.",
         inputSchema: {
           package: z.string().optional(),
           apkPath: z.string().optional(),

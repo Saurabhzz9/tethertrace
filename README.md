@@ -33,7 +33,8 @@ That one command installs the APK over Wi-Fi, cold-starts it, **walks through yo
 
 - a report with a screenshot of every screen it reached and the cold-start time,
 - the exact tap that crashed the app, the crash lines, and a `repro.yaml` that reproduces it,
-- an `explored-flow.yaml` you can keep as a regression test and re-run with `tethertrace run`.
+- an `explored-flow.yaml` you can keep as a regression test and re-run with `tethertrace run`,
+- a coverage level next to the verdict (`ok`, `limited` or `none`), so "no crash observed" on a canvas UI or game it couldn't tap never looks like a pass.
 
 It never types, declines permission prompts, never flips switches or checkboxes, and skips anything that looks destructive or outward-facing (delete, pay, buy, send, share, log out…, in English and Hindi). Add your own with `--deny "reset|archive"`. Add `--record` to get a video of the whole run.
 
