@@ -99,6 +99,21 @@ Safety switches: `--read-only` (look, never touch), `--package com.my.app` (only
 
 Gemini CLI, Cursor, VS Code, Claude Desktop and local models (Ollama, LM Studio): see **[docs/mcp.md](docs/mcp.md)**.
 
+### Agent skill
+
+[`skills/tethertrace/SKILL.md`](skills/tethertrace/SKILL.md) teaches an agent when to reach for tethertrace and how to use it well: checking the phone connection, picking `test`, `smoke` or `run`, writing flows from the real labels, reading verdicts and coverage honestly, and the safety rules. It ships with the package. For Claude Code:
+
+```bash
+mkdir -p ~/.claude/skills && cp -r "$(npm root -g)/tethertrace/skills/tethertrace" ~/.claude/skills/
+```
+
+```powershell
+# Windows PowerShell
+New-Item -ItemType Directory -Force "$HOME\.claude\skills" | Out-Null; Copy-Item -Recurse "$(npm root -g)\tethertrace\skills\tethertrace" "$HOME\.claude\skills\"
+```
+
+Codex, Cursor and other agents that read `SKILL.md`: copy the same folder into their skills directory. The skill works with the MCP server connected or with the CLI alone.
+
 ## Write a test in YAML
 
 ```yaml
