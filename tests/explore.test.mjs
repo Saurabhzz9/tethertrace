@@ -250,6 +250,41 @@ test("explore leaves the phone in the app when its last tap opened something els
   }
 });
 
+test("explore never taps the area around a switch (it flips the switch too)", async () => {
+  const head = `<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0"><node text="" content-desc="" resource-id="" class="android.widget.FrameLayout" package="${PKG}" clickable="false" bounds="[0,0][1080,2400]">`;
+  const n = (attrs) => `<node text="${attrs.text ?? ""}" content-desc="" resource-id="${attrs.id ?? ""}" class="${attrs.cls ?? "android.view.View"}" package="${PKG}" checkable="${attrs.checkable ?? false}" clickable="true" bounds="${attrs.b}" />`;
+  // Like a clock app's alarm row: the time opens the editor; the frame around the switch flips it.
+  const home = `${head}${node("Alarm", 100, { clickable: false })}${n({ id: `${PKG}:id/content_layout`, b: "[48,560][820,840]" })}${n({ id: `${PKG}:id/layout_switch`, b: "[870,600][1032,800]" })}${n({ text: "On", id: `${PKG}:id/alarm_switch`, cls: "android.widget.Switch", checkable: true, b: "[880,660][980,740]" })}${n({ text: "Vibrate", b: "[48,1000][1032,1150]" })}${n({ text: "", cls: "android.widget.CheckBox", checkable: true, b: "[900,1030][980,1110]" })}${node("Help", 1400)}</node></hierarchy>`;
+  const taps = [];
+  const handler = (cmd, kind) => {
+    if (kind === "exec") return cmd.startsWith("screencap") ? TINY_PNG : "";
+    if (cmd.startsWith("date ")) return "11-07 20:00:00.000\n";
+    if (cmd.startsWith("am force-stop")) return "";
+    if (cmd.startsWith("cmd package resolve-activity")) return `${PKG}/.Main\n`;
+    if (cmd.startsWith("am start -W")) return "Status: ok\nTotalTime: 300\n";
+    if (cmd.startsWith("pidof")) return "4321\n";
+    if (cmd.startsWith("uiautomator dump")) return home;
+    if (cmd.startsWith("input tap ")) { taps.push(cmd.split(" ").slice(2).map(Number)); return ""; }
+    return undefined;
+  };
+  const dev = await startAdbd({ mode: "tls", trusted: [key.publicKeyString], handler });
+  const out = await mkdtemp(join(tmpdir(), "tt-explore-"));
+  try {
+    const d = await Device.connect({ host: "127.0.0.1", port: dev.port, key });
+    const s = await explore(d, { pkg: PKG, outDir: out, settleMs: 0, maxActions: 10 });
+    d.close();
+    const hit = (x, y, [l, t, r, b]) => x >= l && x <= r && y >= t && y <= b;
+    assert.ok(!taps.some(([x, y]) => hit(x, y, [870, 600, 1032, 800])), "tapped the frame around the alarm switch");
+    assert.ok(!taps.some(([x, y]) => hit(x, y, [48, 1000, 1032, 1150])), "tapped a row that holds a checkbox");
+    assert.ok(taps.some(([x, y]) => hit(x, y, [48, 560, 820, 840])), "should still open the alarm itself");
+    assert.ok(taps.some(([x, y]) => hit(x, y, [40, 1400, 1040, 1550])), "should still tap ordinary buttons");
+    assert.ok(s.skippedAsRisky.includes("layout_switch (toggle)"));
+    assert.ok(s.skippedAsRisky.includes("Vibrate (toggle)"));
+  } finally {
+    await dev.close();
+  }
+});
+
 test("the window-mode list catches floating windows and picture-in-picture but not ordinary labels", () => {
   for (const l of ["Display calculator in floating window", "Picture-in-picture", "Minimize", "Split screen", "Pop-up view"]) assert.ok(WINDOW_MODE_DENY.test(l), l);
   for (const l of ["Float", "Windows", "Settings", "Mini games", "Screenshot"]) assert.ok(!WINDOW_MODE_DENY.test(l), l);

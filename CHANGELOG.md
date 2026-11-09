@@ -15,6 +15,7 @@ All notable changes are listed here. The project follows [Semantic Versioning](h
 ### Changed
 
 - The explorer never taps switches, checkboxes or radio buttons, so it can't change an app's settings (found on a real phone).
+- The explorer also skips the area around a switch (a row or frame that holds one) and controls whose id names a switch or toggle. On a real phone it tapped the frame around a clock app's alarm switch, which opened "Turn off alarm".
 - The explorer skips controls that change the window mode (floating window, picture-in-picture, split screen). On a real phone it had left Calculator floating over another app.
 - The explorer skips controls as big as the screen, such as the "Dismiss" backdrop behind a dialog. On a real phone it tapped one eight times, each tap landing on a day in a date picker.
 - Launching an app after a force-stop starts it in a clean task. Before, a photo picker the app had opened survived in its task, so the launch showed the picker again and the app never started, which turned into a false `app_exited`. Exploring also returns to the app when its last tap opened something else.
