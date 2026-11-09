@@ -15,5 +15,5 @@ export { createMcpServer, startMcpServer, writeTestPrompt, type McpOptions } fro
 export { explainLocally, explainWithModel, loadReport, parseModelSpec } from "./explain.js";
 export { rawScreencapToPng, encodePng } from "./image.js";
 export { VERSION } from "./version.js";
-export { explore, coverage, screenSignature, DEFAULT_DENY, type ExploreSummary, type ExploreOptions, type ExploreCoverage } from "./explore.js";
+export { explore, coverage, screenSignature, DEFAULT_DENY, WINDOW_MODE_DENY, type ExploreSummary, type ExploreOptions, type ExploreCoverage } from "./explore.js";
 export { Recording, attachRecording, nativeRecorderWorks, type RecordingOptions, type RecordingResult } from "./record.js";

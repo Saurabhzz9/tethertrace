@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import YAML from "yaml";
-import { AdbKey, Device, explore, coverage, DEFAULT_DENY } from "../dist/index.js";
+import { AdbKey, Device, explore, coverage, DEFAULT_DENY, WINDOW_MODE_DENY } from "../dist/index.js";
 import { startAdbd, TINY_PNG } from "./helpers/mock-device.mjs";
 
 const PKG = "com.example.shop";
@@ -165,6 +165,94 @@ test("explore says so when it could tap nothing (canvas UI), next to the verdict
   } finally {
     await dev.close();
   }
+});
+
+test("explore skips window-mode controls and full-screen backdrops (both seen on a real phone)", async () => {
+  const head = `<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0"><node text="" content-desc="" resource-id="" class="android.widget.FrameLayout" package="${PKG}" clickable="false" bounds="[0,0][1080,2400]">`;
+  const home = `${head}${node("Calculator", 100, { clickable: false })}${node("Display calculator in floating window", 400)}${node("Pick date", 600)}</node></hierarchy>`;
+  // A date dialog: the "Dismiss" scrim covers the whole screen; its centre is a day in the calendar.
+  const dialog = (day) => `${head}<node text="" content-desc="Dismiss" resource-id="" class="android.view.View" package="${PKG}" clickable="true" bounds="[0,0][1080,2400]" />${node(`Selected: ${day}`, 300, { clickable: false })}${node("Cancel", 1800)}</node></hierarchy>`;
+  const state = { screen: "home", day: 1, taps: [] };
+  const handler = (cmd, kind) => {
+    if (kind === "exec") return cmd.startsWith("screencap") ? TINY_PNG : "";
+    if (cmd.startsWith("date ")) return "11-07 20:00:00.000\n";
+    if (cmd.startsWith("am force-stop")) return "";
+    if (cmd.startsWith("cmd package resolve-activity")) return `${PKG}/.Main\n`;
+    if (cmd.startsWith("am start -W")) { state.screen = "home"; return "Status: ok\nTotalTime: 300\n"; }
+    if (cmd.startsWith("pidof")) return "4321\n";
+    if (cmd.startsWith("uiautomator dump")) return state.screen === "home" ? home : dialog(state.day);
+    if (cmd.startsWith("input tap ")) {
+      const [x, y] = cmd.split(" ").slice(2).map(Number);
+      state.taps.push(`${state.screen}@${x},${y}`);
+      if (state.screen === "home" && y >= 600 && y <= 750) state.screen = "dialog";
+      else if (state.screen === "dialog" && y >= 1800 && y <= 1950) state.screen = "home";
+      else if (state.screen === "dialog" && y === 1200) state.day++; // the scrim's centre hits a calendar day
+      return "";
+    }
+    if (cmd === "input keyevent KEYCODE_BACK") { state.screen = "home"; return ""; }
+    return undefined;
+  };
+  const dev = await startAdbd({ mode: "tls", trusted: [key.publicKeyString], handler });
+  const out = await mkdtemp(join(tmpdir(), "tt-explore-"));
+  try {
+    const d = await Device.connect({ host: "127.0.0.1", port: dev.port, key });
+    const s = await explore(d, { pkg: PKG, outDir: out, settleMs: 0, maxActions: 20 });
+    d.close();
+    assert.ok(!state.taps.some((t) => t.startsWith("home@") && t.endsWith(",475")), "tapped the floating-window button");
+    assert.ok(s.skippedAsRisky.includes("Display calculator in floating window (window mode)"));
+    assert.equal(state.day, 1, "tapped the full-screen Dismiss backdrop");
+    assert.ok(state.taps.includes("dialog@540,1875"), "closed the dialog with Cancel");
+    assert.equal(s.coverage.stoppedBy, "explored");
+  } finally {
+    await dev.close();
+  }
+});
+
+test("explore leaves the phone in the app when its last tap opened something else", async () => {
+  const home = screen("Home", ["Attach photo"]);
+  const picker = screen("Photos", ["Recent", "Albums"], "com.google.android.photopicker");
+  const state = { alive: true, stack: ["home"], taps: [], backs: 0 };
+  const handler = (cmd, kind) => {
+    if (kind === "exec") return cmd.startsWith("screencap") ? TINY_PNG : "";
+    if (cmd.startsWith("date ")) return "11-07 20:00:00.000\n";
+    if (cmd.startsWith("am force-stop")) { state.alive = false; return ""; }
+    if (cmd.startsWith("cmd package resolve-activity")) return `${PKG}/.Main\n`;
+    if (cmd.startsWith("am start -W")) {
+      // Like Android: after a force-stop the picker survives in the app's task. A plain start shows it
+      // again without starting the app; only a clean task starts the app.
+      if (cmd.includes("--activity-clear-task")) { state.alive = true; state.stack = ["home"]; }
+      else if (state.stack.at(-1) !== "picker") state.alive = true;
+      return "Status: ok\nTotalTime: 300\n";
+    }
+    if (cmd.startsWith("pidof")) return state.alive ? "4321\n" : "";
+    if (cmd === "cmd statusbar collapse") return "";
+    if (cmd === "input keyevent KEYCODE_BACK") { state.backs++; return ""; }
+    if (cmd.startsWith("uiautomator dump")) return state.stack.at(-1) === "picker" ? picker : home;
+    if (cmd.startsWith("input tap ")) {
+      state.taps.push(cmd);
+      if (state.stack.at(-1) === "home") state.stack.push("picker"); // the picker opens inside the app's task
+      return "";
+    }
+    return undefined;
+  };
+  const dev = await startAdbd({ mode: "tls", trusted: [key.publicKeyString], handler });
+  const out = await mkdtemp(join(tmpdir(), "tt-explore-"));
+  try {
+    const d = await Device.connect({ host: "127.0.0.1", port: dev.port, key });
+    const s = await explore(d, { pkg: PKG, outDir: out, settleMs: 0, maxActions: 1 });
+    d.close();
+    assert.equal(state.taps.length, 1);
+    assert.equal(state.stack.at(-1), "home", "left the photo picker open");
+    assert.equal(state.backs, 0, "pressed back outside the app");
+    assert.equal(s.verdict, "no_crash_observed", s.reason);
+  } finally {
+    await dev.close();
+  }
+});
+
+test("the window-mode list catches floating windows and picture-in-picture but not ordinary labels", () => {
+  for (const l of ["Display calculator in floating window", "Picture-in-picture", "Minimize", "Split screen", "Pop-up view"]) assert.ok(WINDOW_MODE_DENY.test(l), l);
+  for (const l of ["Float", "Windows", "Settings", "Mini games", "Screenshot"]) assert.ok(!WINDOW_MODE_DENY.test(l), l);
 });
 
 test("coverage is limited, not ok, when controls were unlabeled or the budget ran out", () => {

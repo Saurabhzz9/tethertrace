@@ -11,12 +11,16 @@ import { classify, filterAppLog, formatNodes } from "./smoke.js";
  * watches for crashes, and writes a report plus ready-to-run YAML flows. No test code needed.
  *
  * Safety: it only taps elements that belong to the app, skips anything that looks destructive or
- * outward-facing (delete, pay, send, share, log out…) and every switch/checkbox, never types, and
- * declines permission prompts.
+ * outward-facing (delete, pay, send, share, log out…), every switch/checkbox, and controls that change
+ * the window mode (floating window, picture-in-picture), never types, and declines permission prompts.
  */
 
 export const DEFAULT_DENY =
   /\b(delete|remove|erase|wipe|reset|clear (all|data)|log ?out|sign ?out|uninstall|pay|payment|purchase|buy|subscribe|checkout|place order|order now|send|share|call|dial|sms|report|block|unsubscribe|deactivate|close account|exit|quit|rate (us|app)|upgrade|premium|restore purchases?)\b|हटाएँ|हटाए|हटाना|मिटाएँ|डिलीट|खरीद|भुगतान|सदस्यता|लॉग ?आउट|साइन ?आउट|भेजें|शेयर|कॉल|रिपोर्ट|ब्लॉक/i;
+
+/** Controls that change how the phone shows the app (a floating window that outlives the test, split screen…). */
+export const WINDOW_MODE_DENY =
+  /\b(floating window|float(ing)? (view|mode)|pop-?up (window|view)|mini ?window|picture[- ]in[- ]picture|pip mode|split[- ]screen|minimi[sz]e)\b|फ़्लोटिंग|फ्लोटिंग/i;
 
 const PERMISSION_DENY = /^(don.?t allow|deny|never|no thanks|not now|cancel|अनुमति न दें|अनुमति नहीं दें|अस्वीकार करें|अभी नहीं)$/i;
 
@@ -175,7 +179,7 @@ export async function explore(d: Device, o: ExploreOptions): Promise<ExploreSumm
   /** Return to the app: resume it if it's still alive, otherwise cold-start it. */
   const bringBack = async (from: string) => {
     if (await d.pidOf(o.pkg)) {
-      await d.launch(o.pkg); // brings the existing task to the front, keeping its state
+      await d.launch(o.pkg, { resume: true }); // brings the existing task to the front, keeping its state
       await record({ screen: current, action: "resume", label: `returned from ${from || "unknown"}` });
       await new Promise((r) => setTimeout(r, settle));
       if (foreground(await d.uiNodes().catch(() => [] as UiNode[])) === o.pkg) return;
@@ -259,6 +263,7 @@ export async function explore(d: Device, o: ExploreOptions): Promise<ExploreSumm
       current = screen.id;
 
       const deny = (l: string) => DEFAULT_DENY.test(l) || (o.deny?.test(l) ?? false);
+      const screenArea = Math.max(1, ...nodes.map(area));
       const candidates = nodes.filter((n) => {
         if (!n.clickable || area(n) < 400 || n.pkg !== o.pkg) return false;
         if (/EditText|AutoCompleteTextView/.test(n.cls)) return false;
@@ -276,6 +281,13 @@ export async function explore(d: Device, o: ExploreOptions): Promise<ExploreSumm
           risky.add(`${l} (toggle)`);
           return false;
         }
+        if (WINDOW_MODE_DENY.test(l)) {
+          risky.add(`${l} (window mode)`);
+          return false;
+        }
+        // A control as big as the screen is a backdrop (the "Dismiss" scrim behind a dialog), not a
+        // button: tapping its centre lands on whatever is drawn on top, e.g. a day in a date picker.
+        if (area(n) >= screenArea * 0.8) return false;
         return !tried.has(`${sig}|${l}|${n.id}`);
       });
       if (!candidates.length) {
@@ -302,6 +314,15 @@ export async function explore(d: Device, o: ExploreOptions): Promise<ExploreSumm
       lastTap = { screen: current, label: l };
       summary.actions++;
       await new Promise((r) => setTimeout(r, settle));
+    }
+    // The last tap may have opened something outside the app (a photo picker, a share sheet) just as the
+    // budget ran out. Leave the phone in the app, the same way the loop does mid-run.
+    if (!crashed && (await d.pidOf(o.pkg))) {
+      const fg = foreground(await d.uiNodes().catch(() => [] as UiNode[]));
+      if (fg && fg !== o.pkg) {
+        await d.shell("cmd statusbar collapse").catch(() => undefined);
+        await bringBack(fg);
+      }
     }
   } catch (e) {
     stoppedBy = "error";
