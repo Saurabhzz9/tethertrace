@@ -368,6 +368,8 @@ program
         log: (m) => console.error(m),
       }));
       console.log(`\n${s.verdict === "no_crash_observed" ? "✔" : "✖"} ${s.verdict}: ${s.reason}`);
+      console.log(`Coverage: ${s.coverage.level} (${s.coverage.tapped} control${s.coverage.tapped === 1 ? "" : "s"} tapped)`);
+      for (const w of s.coverage.warnings) console.log(`  ! ${w}`);
       if (s.launchTimeMs !== undefined) console.log(`Cold start: ${s.launchTimeMs} ms`);
       if (s.crashAfter) console.log(`Crashed after tapping "${s.crashAfter.label}" on screen ${s.crashAfter.screen}. Re-run: tethertrace run ${outDir}/repro.yaml`);
       for (const e of s.evidence.slice(0, 5)) console.log(`  ${e}`);
