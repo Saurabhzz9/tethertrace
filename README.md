@@ -225,6 +225,26 @@ tethertrace explain reports/login-2026-11-07 -m lmstudio:<model>
 
 The model only sees the report folder and is told to quote evidence and say "unknown" when the evidence is thin. tethertrace's own verdict stays the source of truth.
 
+## Experimental: look inside an APK, and one package for several platforms
+
+Two research features. Both are marked experimental and may change.
+
+```bash
+tethertrace analyze app.apk                        # framework, code, native libraries, what it depends on
+tethertrace compatibility app.apk --target ios     # which parts could reach iOS, which cannot, and why
+```
+
+`compatibility` is a static report. It never says an APK runs on iOS, because it does not: there is no Android runtime there. It tells you which route applies to your app (rebuild from source, repackage a web layer, or none).
+
+```bash
+tethertrace pack .                                 # a built web app becomes app.tapp
+tethertrace run app.tapp --platform desktop        # preview it in a browser
+tethertrace run app.tapp --platform android        # run it on your phone inside a small runtime app
+tethertrace convert app.tapp --to apk              # or make a standalone Android app from it
+```
+
+A `.tapp` is a ZIP of HTML, JavaScript and WebAssembly with a manifest that lists every file's SHA-256, the permissions it wants and the origins it may contact. A runtime verifies it, gives it its own origin and enforces that list. The desktop runtime is tested; the Android runtime builds but has not been run on a real phone yet; iOS is not built and needs a Mac, an iPhone and Apple signing. The design, the format and the research behind both features: **[docs/universal-runtime](docs/universal-runtime/README.md)**.
+
 ## Build your own AI phone agent on top of it
 
 tethertrace is also a library. Anything a person can do on their own phone (read what's on screen in **any** app, tap, type, open apps, take screenshots), your code can do over Wi-Fi, with no app to install on the phone. That makes it a base for your own AI products:

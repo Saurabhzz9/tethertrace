@@ -2,6 +2,17 @@
 
 All notable changes are listed here. The project follows [Semantic Versioning](https://semver.org).
 
+## Unreleased
+
+### Added (experimental)
+
+- `tethertrace analyze app.apk` and `tethertrace compatibility app.apk --target ios`: read an APK without running it (framework, DEX code, native libraries, web layer, Google dependencies) and report which parts could be carried to iOS, which cannot, and why. The report always says the APK does not run unmodified.
+- `.tapp`, a portable package for web-technology apps: `tethertrace pack` writes a ZIP with a manifest that lists every file's SHA-256, optionally signed with Ed25519 (`tapp keygen`, `pack --key`). `tapp verify` checks it.
+- Runtimes for `.tapp`: `run app.tapp --platform desktop` (a local preview with the same content policy as the phone) and `--platform android` (a small host app with a WebView, in `runtime/android`). Each package gets its own origin, is served only its own files, reaches the network only where its manifest says, and uses device features through one API, `window.tapp`, checked against its permissions.
+- `convert app.tapp --to apk` builds a standalone Android app with the package inside. `convert app.apk --to tapp` packs the web layer of a Cordova or Capacitor APK.
+- Asking for what cannot work (`run app.apk --platform ios`, `convert … --to ios`) prints the reason and exits with code 2.
+- Research reports with sources in `docs/universal-runtime`. Not verified: the Android runtime on a real phone, and anything on iOS.
+
 ## 0.1.1 - 2026-11-11
 
 ### Fixed

@@ -226,6 +226,24 @@ export class Device {
     return out;
   }
 
+  /**
+   * Write a file into a debuggable app's private folder, as that app (`run-as`). Returns what the
+   * phone printed; it ends with TAPP_SENT when every byte arrived. Works only for apps built
+   * debuggable, which is how Android lets a developer reach an app's own storage.
+   */
+  async pushAs(pkg: string, relPath: string, data: Buffer) {
+    assertPackage(pkg);
+    if (!/^[\w./-]+$/.test(relPath) || relPath.startsWith("/") || relPath.split("/").includes("..")) throw new Error(`Unsafe path "${relPath}"`);
+    const dir = relPath.includes("/") ? relPath.slice(0, relPath.lastIndexOf("/")) : ".";
+    const s = await this.adb.open(`exec:run-as ${pkg} sh -c 'mkdir -p ${dir} && head -c ${data.length} > ${relPath} && echo TAPP_SENT'`);
+    try {
+      if (data.length) await s.write(data);
+      return (await withTimeout(s.readAll(), 60_000, () => s.close(), new AdbError("TIMEOUT", "The phone did not confirm the file"))).toString("utf8");
+    } finally {
+      s.close();
+    }
+  }
+
   // ---- Interaction -------------------------------------------------------
 
   private screen?: { w: number; h: number };

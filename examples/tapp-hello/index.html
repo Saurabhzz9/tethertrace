@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tapp Hello</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Tapp Hello</h1>
+  <p id="where">Starting</p>
+
+  <section>
+    <p id="count">Count: 0</p>
+    <button id="add">Add one</button>
+    <button id="reset">Reset</button>
+    <p class="hint">The count is kept with tapp.storage, so it survives a restart.</p>
+  </section>
+
+  <section>
+    <p id="wasm">WebAssembly: not run yet</p>
+    <p id="net">Network: not checked yet</p>
+    <p id="perm">Camera permission: not checked yet</p>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+{
+  "id": "com.example.tapphello",
+  "name": "Tapp Hello",
+  "version": "0.1.0",
+  "permissions": ["storage", "vibrate"],
+  "network": []
+}
