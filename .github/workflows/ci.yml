@@ -45,7 +45,6 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     env:
       TETHERTRACE_MANAGED_ONLY: "1"
-      TETHERTRACE_HOME: ${{ runner.temp }}/tethertrace-home
     defaults:
       run:
         shell: bash
@@ -57,6 +56,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # The runner context is not available in job-level env, so the empty home is set here.
+      - name: use an empty tethertrace home
+        run: echo "TETHERTRACE_HOME=$(node -p "require('path').join(process.env.RUNNER_TEMP, 'tethertrace-home')")" >> "$GITHUB_ENV"
       - name: doctor says what is missing
         run: |
           node dist/cli.js doctor examples/android-hello | tee doctor.txt || true
