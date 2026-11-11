@@ -19,7 +19,7 @@ export const PERMISSION_CLASSES: readonly PermissionClass[] = ["read", "interact
  * - read: screenshots, UI inspection, logs, diagnostics
  * - interact: tap, swipe, type, keys, launching/stopping an app, running tests
  * - install: installing or updating an app
- * - execute: raw shell on the device (and, later, running builds)
+ * - execute: running code the caller chooses: raw shell on the device, or a project build on this computer
  * - sensitive: changes to who may control the device (pairing)
  */
 export const TOOL_CLASSES: Readonly<Record<string, readonly PermissionClass[]>> = {
@@ -34,6 +34,8 @@ export const TOOL_CLASSES: Readonly<Record<string, readonly PermissionClass[]>> 
   wait_for: ["read"],
   app_logs: ["read"],
   explain_report: ["read"],
+  inspect_project: ["read"],
+  toolchain_status: ["read"],
   tap: ["interact"],
   type_text: ["interact"],
   press_key: ["interact"],
@@ -46,8 +48,11 @@ export const TOOL_CLASSES: Readonly<Record<string, readonly PermissionClass[]>> 
   explore_app: ["interact"],
   install_apk: ["install"],
   shell: ["execute"],
+  build_project: ["execute"],
   pair_device: ["sensitive"],
 };
+
+const EXECUTE_FLAG: Record<string, string> = { shell: "--allow-shell", build_project: "--allow-build" };
 
 export class PolicyError extends Error {
   readonly code = "POLICY_DENIED";
@@ -78,6 +83,8 @@ export interface ScopeProbe {
 export interface PolicyOptions {
   readOnly?: boolean;
   allowShell?: boolean;
+  /** Let agents run a project build (Gradle, Flutter) on this computer. */
+  allowBuild?: boolean;
   /** Restrict everything app-related to these packages. */
   packages?: string[];
   /** The device this server was started for. When set, switching to another one is refused. */
@@ -122,7 +129,7 @@ export class Policy {
     // Read-only wins over everything else, including --allow-shell.
     if (!o.readOnly) {
       g.add("interact").add("install").add("sensitive");
-      if (o.allowShell) g.add("execute");
+      if (o.allowShell || o.allowBuild) g.add("execute");
     }
     this.granted = g;
     this.preauthorized = new Set(o.preauthorize ?? []);
@@ -130,9 +137,31 @@ export class Policy {
     this.auditFile = o.auditFile === false ? false : (o.auditFile ?? join(homeDir(), "audit.jsonl"));
   }
 
-  /** Whether a class is available at all in this session (used to decide which tools to list). */
+  /** Whether a class is available at all in this session. */
   grants(cls: PermissionClass) {
     return this.granted.has(cls);
+  }
+
+  /**
+   * Why a tool is unavailable in this session, or undefined when it may be offered. "execute" is
+   * granted per tool, not as a block: --allow-shell does not allow builds, and the reverse.
+   */
+  unavailable(tool: string): string | undefined {
+    const classes = TOOL_CLASSES[tool];
+    if (!classes?.length) return `${tool} has no permission class; refusing to run it`;
+    for (const c of classes) {
+      if (this.granted.has(c)) continue;
+      if (this.o.readOnly) return `${tool} needs "${c}" permission, but this server is read-only`;
+      if (c === "execute") return `${tool} needs "execute" permission; start the server with ${EXECUTE_FLAG[tool] ?? "the matching --allow flag"}`;
+      return `${tool} needs "${c}" permission, which this server does not grant`;
+    }
+    if (tool === "shell") {
+      if (!this.o.allowShell) return `shell needs "execute" permission; start the server with --allow-shell`;
+      // Raw shell cannot be confined to an app, so it is never available in a package-scoped session.
+      if (this.scope) return `shell cannot be limited to ${[...this.scope].join(", ")}; it is disabled while --package is set`;
+    }
+    if (tool === "build_project" && !this.o.allowBuild) return `build_project needs "execute" permission; start the server with --allow-build`;
+    return undefined;
   }
 
   get scoped() {
@@ -151,20 +180,13 @@ export class Policy {
       throw new PolicyError(reason);
     };
     // Unknown tools have no class, so they can never run: fail closed.
-    if (!classes.length) return deny(`${req.tool} has no permission class; refusing to run it`);
-    for (const c of classes) {
-      if (!this.granted.has(c))
-        return deny(
-          this.o.readOnly ? `${req.tool} needs "${c}" permission, but this server is read-only` : c === "execute" ? `${req.tool} needs "execute" permission; start the server with --allow-shell` : `${req.tool} needs "${c}" permission, which this server does not grant`,
-        );
-    }
+    const unavailable = this.unavailable(req.tool);
+    if (unavailable) return deny(unavailable);
+    for (const c of classes) if (!this.granted.has(c)) return deny(this.o.readOnly ? `${req.tool} needs "${c}" permission, but this server is read-only` : `${req.tool} needs "${c}" permission, which this server does not grant`);
     if (req.pkg !== undefined) {
       const why = this.packageDenial(req.pkg);
       if (why) return deny(why);
     }
-    // Raw shell cannot be confined to an app, so it is never available in a package-scoped session.
-    if (classes.includes("execute") && this.scope) return deny(`${req.tool} cannot be limited to ${[...this.scope].join(", ")}; it is disabled while --package is set`);
-
     const needs = classes.filter((c) => this.confirm.has(c));
     if (needs.length) {
       const summary = req.summary ?? req.tool;

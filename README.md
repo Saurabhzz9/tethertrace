@@ -40,6 +40,17 @@ It never types, declines permission prompts, never flips switches or checkboxes,
 
 Works with native Views, Jetpack Compose, Flutter and React Native, because it tests the built app, not your source code.
 
+## No APK yet? Build it too
+
+```bash
+tethertrace doctor          # what is in this folder, and what a build needs
+tethertrace build --test    # build, install on your phone, explore for crashes
+```
+
+`build` runs your project's own build (the Gradle wrapper, or `flutter build apk`) and works out the JDK and Android SDK it needs. It uses what is already on your computer. If something is missing, it asks before downloading the smallest set that can compile an app (a JDK, Google's SDK command-line tools and the one platform your project targets), verifies the checksums, and keeps it in `~/.tethertrace`. You do not need Android Studio, and you do not set `JAVA_HOME` or `ANDROID_HOME`.
+
+A failed build comes back with a category (`compile_error`, `jdk_incompatible`, `dependency_download_failed`, …) and the lines that matter. Details and limits: **[docs/build.md](docs/build.md)**.
+
 ## Why
 
 - **Nothing to install but Node.** tethertrace speaks the ADB wire protocol itself in TypeScript: wireless pairing (TLS 1.3 + SPAKE2), the encrypted connection, shell, install, screenshots. No `adb.exe`, no 150 MB platform-tools, no USB drivers.

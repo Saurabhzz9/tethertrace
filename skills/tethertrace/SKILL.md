@@ -25,6 +25,8 @@ Never guess or reuse a pairing code. Only the user can read it from their phone.
 
 | The user wants | Run |
 |---|---|
+| What is in this folder and can it be built here | `tethertrace doctor` |
+| Build the app from source (native Android, Flutter, React Native) | `tethertrace build` (debug APK). Add `--test` to install and explore it, `--json` for a machine-readable result |
 | "Does my APK work?" with no test written | `tethertrace test app.apk` (installs, explores, catches crashes, writes flows) |
 | Install, cold start and a quick crash check | `tethertrace smoke --apk app.apk` |
 | A repeatable test for a specific path | Write a YAML flow (section 3), then `tethertrace run flow.yaml` |
@@ -36,6 +38,16 @@ Never guess or reuse a pairing code. Only the user can read it from their phone.
 | Find a package name | `tethertrace apps --filter example` or `tethertrace apk-info app.apk` |
 
 Every test command writes a folder under `reports/` with `report.html`, `summary.json`, screenshots and the app's own logs. `run` exits 0 on pass and 2 on failure; `test` and `smoke` exit 2 for any verdict other than `no_crash_observed`.
+
+### Building from source
+
+`tethertrace build` runs the project's own build and finds the JDK and Android SDK it needs. Rules:
+
+- Run `tethertrace doctor` first when a build has not worked on this computer before. It lists what is missing.
+- If something must be downloaded (a JDK, the Android SDK tools) or the Android SDK licenses must be accepted, **ask the user before adding `--yes`**. Say what will be downloaded and how big it is; `doctor` and the failure message tell you.
+- If it reports several projects, modules or variants, pass the folder, `--module` or `--variant` it lists. Do not guess.
+- On failure read `error.category`: `compile_error` is the app's own code (fix the source, the lines are in `error.excerpt`); `jdk_incompatible`, `toolchain_missing` and `license_not_accepted` are setup; `dependency_download_failed` is the network. Do not edit Gradle files to work around a setup problem.
+- iOS projects and Expo projects without an `android/` folder cannot be built yet. Say so.
 
 ## 3. Writing a YAML flow
 

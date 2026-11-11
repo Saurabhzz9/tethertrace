@@ -27,6 +27,7 @@ async function phone(opts = {}) {
   const state = { front: APP };
   const handler = (cmd, kind) => {
     if (kind === "exec") return cmd.startsWith("screencap") ? TINY_PNG : "";
+    if (cmd.includes("InsetsSource")) return state.insets ?? "";
     if (cmd.startsWith("dumpsys window")) return state.front ? `  mCurrentFocus=Window{1a2b3c u0 ${state.front}/${state.front}.MainActivity}\n` : "  mCurrentFocus=Window{9f8e7d u0 NotificationShade}\n";
     if (cmd.startsWith("uiautomator dump")) return screenOf(state.front ?? "com.android.systemui");
     if (cmd.startsWith("wm size")) return "Physical size: 1080x2400\n";
@@ -60,7 +61,7 @@ async function phone(opts = {}) {
 const denied = (r, re) => { assert.equal(r.isError, true, JSON.stringify(r.content)); assert.match(r.content[0].text, re); };
 
 test("every registered tool has a permission class, and nothing else is registered", async () => {
-  const p = await phone({ allowShell: true });
+  const p = await phone({ allowShell: true, allowBuild: true });
   try {
     const names = (await p.client.listTools()).tools.map((t) => t.name).sort();
     assert.deepEqual(names, Object.keys(TOOL_CLASSES).sort());
@@ -268,4 +269,54 @@ test("the policy is platform-neutral: any adapter that can say what is in front 
   await assert.rejects(policy.assertInScope("tap", { focusedPackage: async () => "com.example.Notes" }, { x: 1, y: 1 }), /could not tell which app owns/);
   assert.throws(() => parseClasses("interact,root", "--confirm"), /unknown permission class "root"/);
   assert.deepEqual(parseClasses("install, execute", "--confirm"), ["install", "execute"]);
+});
+
+test("execute is granted per tool: --allow-build does not open the shell, and the reverse", async () => {
+  const b = await phone({ allowBuild: true });
+  try {
+    const names = (await b.client.listTools()).tools.map((t) => t.name);
+    assert.ok(names.includes("build_project") && !names.includes("shell"));
+  } finally { await b.close(); }
+  const s = await phone({ allowShell: true });
+  try {
+    const names = (await s.client.listTools()).tools.map((t) => t.name);
+    assert.ok(names.includes("shell") && !names.includes("build_project"));
+  } finally { await s.close(); }
+  await assert.rejects(new Policy({ allowBuild: true, auditFile: false }).authorize({ tool: "shell" }), /--allow-shell/);
+  await assert.rejects(new Policy({ allowShell: true, auditFile: false }).authorize({ tool: "build_project" }), /--allow-build/);
+  await assert.rejects(new Policy({ allowBuild: true, readOnly: true, auditFile: false }).authorize({ tool: "build_project" }), /read-only/);
+  await new Policy({ allowBuild: true, packages: [APP], auditFile: false }).authorize({ tool: "build_project" });
+});
+
+test("build_project reports a failure as an error and never builds something it cannot identify", async () => {
+  const p = await phone({ allowBuild: true });
+  try {
+    const r = await p.call("build_project", { dir: p.dir });
+    assert.equal(r.isError, true);
+    assert.equal(JSON.parse(r.content[0].text).error.category, "no_project");
+    const seen = JSON.parse((await p.call("inspect_project", { dir: p.dir })).content[0].text);
+    assert.deepEqual(seen, []);
+    assert.ok((await p.audit()).some((e) => e.tool === "build_project" && e.decision === "allowed" && e.classes.includes("execute")));
+  } finally { await p.close(); }
+});
+
+test("system bars and gesture strips are off limits even where the app draws underneath them", async () => {
+  // Real values from a phone: the app's root covers the whole screen, so the UI tree alone would say
+  // a touch at y=120 belongs to the app. Android's insets say it is the gesture strip.
+  const p = await phone({ packages: [APP] });
+  try {
+    p.state.insets = [
+      "InsetsSource id=1 type=statusBars frame=[0,0][1080,96] visible=true flags=",
+      "InsetsSource id=2 type=mandatorySystemGestures frame=[0,0][1080,132] visible=true flags=",
+      "InsetsSource id=3 type=navigationBars frame=[0,2280][1080,2412] visible=true flags=",
+      "InsetsSource id=4 type=systemGestures frame=[0,0][0,0] visible=true flags=",
+      "InsetsSource id=5 type=navigationBars frame=[0,500][1080,900] visible=false flags=",
+    ].join(String.fromCharCode(10));
+    denied(await p.call("tap", { x: 540, y: 120 }), /540,120 belongs to com\.android\.systemui/);
+    denied(await p.call("tap", { x: 540, y: 2300 }), /belongs to com\.android\.systemui/);
+    denied(await p.call("swipe", { x1: 540, y1: 2390, x2: 540, y2: 1200 }), /belongs to com\.android\.systemui/); // swipe up from the bottom = go home
+    assert.deepEqual(p.acted(), []);
+    assert.match((await p.call("tap", { x: 540, y: 700 })).content[0].text, /Tapped 540,700/, "a hidden bar and an empty gesture area block nothing");
+    assert.match((await p.call("tap", { x: 540, y: 140 })).content[0].text, /Tapped 540,140/);
+  } finally { await p.close(); }
 });

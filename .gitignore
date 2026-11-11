@@ -5,3 +5,8 @@ flows/
 *.tgz
 .env
 media/
+
+# example projects
+examples/**/build/
+examples/**/.gradle/
+examples/**/local.properties

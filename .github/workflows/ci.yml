@@ -32,3 +32,56 @@ jobs:
       - run: npm test
       - name: CLI starts
         run: node dist/cli.js --help
+
+  # Builds the example app the way a new user's computer would: every JDK and Android SDK on the
+  # runner is ignored, so the toolchain is downloaded from nothing.
+  build-from-nothing:
+    name: build from nothing (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    env:
+      TETHERTRACE_MANAGED_ONLY: "1"
+      TETHERTRACE_HOME: ${{ runner.temp }}/tethertrace-home
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: doctor says what is missing
+        run: |
+          node dist/cli.js doctor examples/android-hello | tee doctor.txt || true
+          grep -q "missing: A JDK" doctor.txt
+          grep -q "missing: No Android SDK" doctor.txt
+      - name: nothing is downloaded without approval
+        run: |
+          node dist/cli.js build examples/android-hello --json > declined.json < /dev/null || true
+          node -e "const r=require('./declined.json'); if (r.ok || r.error.category !== 'consent_declined') { console.error(r); process.exit(1) }"
+          test ! -d "$TETHERTRACE_HOME/toolchains/jdk"
+      - name: build with a downloaded toolchain
+        run: |
+          node dist/cli.js build examples/android-hello --yes --json > result.json || (cat result.json; tail -n 80 examples/android-hello/build/tethertrace/build.log; exit 1)
+          cat result.json
+          node -e "
+            const r = require('./result.json');
+            const a = r.artifacts[0];
+            const home = process.env.TETHERTRACE_HOME.replace(/\\\\/g, '/');
+            const under = (p) => p.replace(/\\\\/g, '/').startsWith(home);
+            const ok = r.ok && a.packageName === 'com.example.hello' && a.versionName === '0.3' && a.signature.v2plus && under(r.toolchain.jdk) && under(r.toolchain.sdk);
+            if (!ok) process.exit(1);
+          "
+      - name: what was downloaded
+        run: node dist/cli.js toolchain list
+      - name: second build works offline
+        run: |
+          node dist/cli.js build examples/android-hello --offline --json > offline.json || (cat offline.json; exit 1)
+          node -e "if (!require('./offline.json').ok) process.exit(1)"
