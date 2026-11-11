@@ -163,7 +163,7 @@ export function classifyBuildFailure(output: string): { category: BuildErrorCate
   if (/SDK location not found|ANDROID_HOME|sdk\.dir/.test(output) && /not found|Define a valid/.test(output))
     return { category: "toolchain_missing", hints: ["No Android SDK was found. Run `tethertrace doctor`, then `tethertrace build --yes` to let it fetch a minimal one."], excerpt: summary };
   if (/licen[cs]e.*not (been )?accepted|Failed to install the following Android SDK packages/i.test(output))
-    return { category: "license_not_accepted", hints: ["The Android SDK licenses are not accepted. Run `tethertrace build --yes` to accept them, or `sdkmanager --licenses` yourself."], excerpt: summary };
+    return { category: "license_not_accepted", hints: ["The Android SDK licenses are not accepted. Run `tethertrace build --yes` to accept them, or accept them in Android Studio's SDK manager."], excerpt: summary };
   if (/Unsupported class file major version|incompatible with the Java|requires Java \d+|Android Gradle plugin requires Java/i.test(output))
     return { category: "jdk_incompatible", hints: ["The JDK does not fit this project's Gradle or Android Gradle Plugin version. Run `tethertrace doctor` to see which JDK it needs."], excerpt: summary };
   if (/insufficient memory for the Java Runtime|OutOfMemoryError|Gradle build daemon disappeared unexpectedly|GC overhead limit exceeded/i.test(output))

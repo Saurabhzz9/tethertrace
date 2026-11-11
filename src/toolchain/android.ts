@@ -239,7 +239,10 @@ export function parseCmdlineTools(xml: string, hostOs: string): { url: string; s
   return undefined;
 }
 
-/** Download Google's SDK command-line tools into the managed SDK folder. */
+/**
+ * Download Google's SDK command-line tools into the managed SDK folder. No longer part of a build:
+ * `sdkmanager` is deprecated, and packages are installed directly (see installSdkPackage).
+ */
 export async function installCmdlineTools(o: ResolveOptions): Promise<AndroidSdk> {
   const host = SDK_HOST[process.platform];
   if (!host) throw new ToolchainError("UNSUPPORTED", `No Android SDK command-line tools for ${process.platform}`);
@@ -279,38 +282,136 @@ export async function writeSdkLicense(sdkRoot: string): Promise<void> {
   await writeFile(join(sdkRoot, "licenses", "android-sdk-license"), ANDROID_SDK_LICENSE_HASHES.map((h) => `\n${h}`).join(""));
 }
 
-/** Accept the SDK licenses (after consent) and install exactly the platform a project compiles against. */
-export async function prepareSdk(sdk: AndroidSdk, jdk: Jdk, compileSdk: number | undefined, o: ResolveOptions): Promise<AndroidSdk> {
-  const needLicense = !sdk.licensesAccepted;
-  const needPlatform = compileSdk !== undefined && !sdk.platforms.includes(compileSdk);
-  if (!needLicense && !needPlatform) return sdk;
-  if (!sdk.hasCmdlineTools) throw new ToolchainError("NOT_FOUND", `The SDK at ${sdk.root} has no command-line tools, so tethertrace cannot add ${needLicense ? "licenses" : `platform ${compileSdk}`} to it. Install them with its SDK manager, or unset ANDROID_HOME to use a managed SDK.`);
-  const env = { ...(o.env ?? process.env), JAVA_HOME: jdk.home, ANDROID_HOME: sdk.root, ANDROID_SDK_ROOT: sdk.root };
+export interface SdkPackage {
+  path: string;
+  url: string;
+  sha1: string;
+  size: number;
+  /** The package.xml the SDK manager would write next to the files, so build tools recognise the package. */
+  packageXml?: string;
+}
+
+const NS_COMMON = "http://schemas.android.com/repository/android/common/02";
+const NS_GENERIC = "http://schemas.android.com/repository/android/generic/02";
+const NS_SDK = "http://schemas.android.com/sdk/android/repo/repository2/03";
+
+/**
+ * Find one package (for example "platforms;android-36") in Google's SDK index: the archive for this
+ * OS with its checksum, and the description to store beside it. Stable channel only.
+ */
+export function parseSdkPackage(xml: string, path: string, hostOs?: string): SdkPackage | undefined {
+  const esc = path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // A path can be listed once per channel; take the stable entry.
+  const body = [...xml.matchAll(new RegExp(`<remotePackage path="${esc}"[^>]*>([\\s\\S]*?)</remotePackage>`, "g"))].map((m) => m[1]!).find((b) => !/<channelRef ref="channel-[1-9]"/.test(b));
+  if (!body) return undefined;
+  let found: { url: string; sha1: string; size: number } | undefined;
+  for (const a of body.matchAll(/<archive>([\s\S]*?)<\/archive>/g)) {
+    const os = /<host-os>(\w+)<\/host-os>/.exec(a[1]!)?.[1];
+    if (os && os !== hostOs) continue;
+    const url = /<url>([^<]+)<\/url>/.exec(a[1]!)?.[1];
+    const sha1 = /<checksum[^>]*>([a-f0-9]{40})<\/checksum>/i.exec(a[1]!)?.[1];
+    const size = Number(/<size>(\d+)<\/size>/.exec(a[1]!)?.[1]);
+    if (url && sha1 && /^[\w.-]+\.zip$/.test(url)) {
+      found = { url, sha1, size };
+      break;
+    }
+  }
+  if (!found) return undefined;
+
+  // package.xml: the same description, as a local package, in the form the SDK manager writes.
+  const squeeze = (t: string) => t.replace(/>\s+</g, "><").trim();
+  const details = /<type-details xsi:type="(sdk|generic):(\w+)"\s*(?:\/>|>([\s\S]*?)<\/type-details>)/.exec(body);
+  const revision = /<revision>[\s\S]*?<\/revision>/.exec(body)?.[0];
+  const name = /<display-name>[^<]*<\/display-name>/.exec(body)?.[0];
+  const licenseRef = /<uses-license ref="([\w-]+)"\s*\/>/.exec(body)?.[1];
+  const license = licenseRef ? new RegExp(`<license id="${licenseRef}"[^>]*>[\\s\\S]*?</license>`).exec(xml)?.[0] : undefined;
+  let packageXml: string | undefined;
+  if (details && revision && name && (!licenseRef || license)) {
+    const ns = details[1] === "sdk" ? "ns11" : "ns5";
+    packageXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><ns2:repository xmlns:ns2="${NS_COMMON}" xmlns:ns5="${NS_GENERIC}" xmlns:ns11="${NS_SDK}">` +
+      (license ?? "") +
+      `<localPackage path="${path}" obsolete="false"><type-details xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="${ns}:${details[2]}">${squeeze(details[3] ?? "")}</type-details>` +
+      `${squeeze(revision)}${name}${licenseRef ? `<uses-license ref="${licenseRef}"/>` : ""}</localPackage></ns2:repository>`;
+  }
+  return { path, ...found, packageXml };
+}
+
+/**
+ * Install one SDK package straight from Google's index, without the SDK manager: download the
+ * archive, check its SHA-1, unpack it where the SDK expects it and write its package.xml.
+ */
+export async function installSdkPackage(sdkRoot: string, path: string, o: ResolveOptions): Promise<void> {
+  if (!/^[\w.-]+(;[\w.-]+)*$/.test(path)) throw new ToolchainError("DOWNLOAD", `Not an SDK package path: ${path}`);
+  const f = o.fetchImpl ?? fetch;
+  const res = await f(`${SDK_REPO}repository2-3.xml`, { signal: o.signal });
+  if (!res.ok) throw new ToolchainError("DOWNLOAD", `Google's SDK index answered ${res.status}`);
+  const pkg = parseSdkPackage(await res.text(), path, SDK_HOST[process.platform]);
+  if (!pkg) throw new ToolchainError("DOWNLOAD", `Google's SDK index has no stable package ${path} for this computer`);
+  const mb = Math.round(pkg.size / 1e6);
+  if (!(await (o.consent?.({ what: `Android SDK package ${path}`, detail: `${pkg.url} from dl.google.com`, downloadMb: mb, license: "Android Software Development Kit License" }) ?? false)))
+    throw new ToolchainError("CONSENT", `${path} is needed and was not approved for download (${mb} MB). Re-run with --yes, or install it with your own SDK manager.`);
+  await requireSpace(toolchainsDir(), pkg.size * 4, `Android SDK package ${path}`);
+  const archive = join(toolchainsDir(), "downloads", pkg.url);
+  o.log?.(`Downloading ${pkg.url} (${mb} MB)…`);
+  await download(SDK_REPO + pkg.url, archive, { checksum: { algorithm: "sha1", hex: pkg.sha1 }, signal: o.signal, log: o.log, fetchImpl: o.fetchImpl });
+  const dest = join(sdkRoot, ...path.split(";"));
+  await rm(dest, { recursive: true, force: true });
+  try {
+    await extractZip(archive, dest, 1); // every SDK archive has one top folder
+    if (pkg.packageXml) await writeFile(join(dest, "package.xml"), pkg.packageXml);
+  } catch (e) {
+    await rm(dest, { recursive: true, force: true }); // never leave half a package behind
+    throw e;
+  } finally {
+    await rm(archive, { force: true });
+  }
+}
+
+/**
+ * Record the accepted SDK licenses (after consent) and install exactly the platform a project
+ * compiles against. Works on an SDK folder that does not exist yet: that becomes the managed SDK.
+ */
+export async function prepareSdk(sdk: AndroidSdk | undefined, jdk: Jdk | undefined, compileSdk: number | undefined, o: ResolveOptions): Promise<AndroidSdk> {
+  const root = sdk?.root ?? managedSdkDir();
+  const source = sdk?.source ?? "tethertrace (managed)";
+  const needLicense = !sdk?.licensesAccepted;
+  const needPlatform = compileSdk !== undefined && !sdk?.platforms.includes(compileSdk);
+  if (sdk && !needLicense && !needPlatform) return sdk;
   if (needLicense) {
     if (!(await (o.consent?.({ what: "Android SDK licenses", detail: "Google's license terms for the Android SDK (https://developer.android.com/studio/terms). Accepting them is required to download SDK packages.", license: "Android Software Development Kit License" }) ?? false)))
       throw new ToolchainError("CONSENT", "The Android SDK licenses were not accepted, so SDK packages cannot be downloaded. Re-run with --yes to accept them.");
-    const r = await run(sdkmanagerPath(sdk.root), ["--licenses", `--sdk_root=${sdk.root}`], { env, input: "y\n".repeat(40), timeoutMs: 5 * 60_000, signal: o.signal });
-    if (r.code !== 0) throw new ToolchainError("DOWNLOAD", `sdkmanager --licenses failed: ${r.output.slice(-600)}`);
-    // On Windows the tool does not always read the piped answers, and it exits 0 without writing
-    // anything. The person has agreed to the terms above, so record that the way the SDK itself does.
-    if (!(await pathExists(join(sdk.root, "licenses", "android-sdk-license")))) await writeSdkLicense(sdk.root);
+    // The person has agreed to the terms above; record that the way the SDK itself does.
+    await writeSdkLicense(root);
   }
   if (needPlatform) {
+    const path = `platforms;android-${compileSdk}`;
     o.log?.(`Installing Android platform ${compileSdk} (the one this project compiles against)…`);
-    const r = await run(sdkmanagerPath(sdk.root), [`--sdk_root=${sdk.root}`, `platforms;android-${compileSdk}`], { env, input: "y\n".repeat(10), timeoutMs: 20 * 60_000, signal: o.signal, onLine: (l) => /\d+%/.test(l) || o.log?.(`  ${l}`) });
-    if (r.cancelled) throw new ToolchainError("CANCELLED", "Cancelled");
-    // The tool can exit 0 after printing "Package ... not found", so check the result, not the exit code.
-    if (r.code !== 0 || !(await pathExists(join(sdk.root, "platforms", `android-${compileSdk}`))))
-      throw new ToolchainError("DOWNLOAD", `sdkmanager could not install platforms;android-${compileSdk}: ${r.output.split(String.fromCharCode(10)).filter((l) => l.trim()).slice(-6).join(" | ")}`);
+    try {
+      await installSdkPackage(root, path, o);
+    } catch (e) {
+      const code = e instanceof ToolchainError ? e.code : "";
+      // Fall back to the SDK's own (deprecated) manager when it is there; otherwise report why.
+      if (code === "CONSENT" || code === "CANCELLED" || !sdk?.hasCmdlineTools || !jdk) throw e;
+      o.log?.(`  direct install failed (${(e as Error).message}); trying sdkmanager…`);
+      const env = { ...(o.env ?? process.env), JAVA_HOME: jdk.home, ANDROID_HOME: root, ANDROID_SDK_ROOT: root };
+      const r = await run(sdkmanagerPath(root), [`--sdk_root=${root}`, path], { env, input: "y\n".repeat(10), timeoutMs: 20 * 60_000, signal: o.signal, onLine: (l) => /\d+%/.test(l) || o.log?.(`  ${l}`) });
+      if (r.cancelled) throw new ToolchainError("CANCELLED", "Cancelled");
+      // The tool can exit 0 after printing "Package ... not found", so check the result, not the exit code.
+      if (r.code !== 0 || !(await pathExists(join(root, "platforms", `android-${compileSdk}`))))
+        throw new ToolchainError("DOWNLOAD", `sdkmanager could not install ${path}: ${r.output.split(String.fromCharCode(10)).filter((l) => l.trim()).slice(-6).join(" | ")}`);
+    }
   }
-  return (await sdkAt(sdk.root, sdk.source))!;
+  const ready = await sdkAt(root, source);
+  if (!ready) throw new ToolchainError("EXTRACT", `The Android SDK at ${root} could not be set up`);
+  return ready;
 }
 
 // ---------------------------------------------------------------- resolve
 
 /**
  * Work out what an Android project needs, find it on this machine, and (with `install`) fetch what
- * is missing. Build-tools are left to the Android Gradle Plugin, which downloads the exact version
+ * is missing: a JDK, the SDK licenses and the one platform the project compiles against. Build-tools are left to the Android Gradle Plugin, which downloads the exact version
  * it wants once the licenses are accepted.
  */
 export async function resolveAndroidToolchain(project: AndroidProjectInfo, o: ResolveOptions = {}): Promise<AndroidToolchain> {
@@ -326,9 +427,9 @@ export async function resolveAndroidToolchain(project: AndroidProjectInfo, o: Re
     missing.push({ what: "jdk", detail: `A JDK ${min}${max ? ` to ${max}` : " or newer"} is needed${have.length ? `; found only ${[...new Set(have)].join(", ")}` : "; none found"}`, downloadMb: 190 });
   }
   let sdk = await findSdk(project.gradleRoot, o);
-  if (!sdk && o.install && jdk) sdk = await installCmdlineTools(o);
-  if (!sdk) missing.push({ what: "sdk", detail: "No Android SDK found (looked at local.properties, ANDROID_HOME and the default locations)", downloadMb: 150 });
-  if (sdk && jdk && o.install) sdk = await prepareSdk(sdk, jdk, compileSdk, o);
+  // Nothing here needs the SDK manager or a JDK: licenses are recorded and the platform is fetched directly.
+  if (o.install) sdk = await prepareSdk(sdk, jdk, compileSdk, o);
+  if (!sdk) missing.push({ what: "sdk", detail: "No Android SDK found (looked at local.properties, ANDROID_HOME and the default locations)", downloadMb: 70 });
   if (sdk && !sdk.licensesAccepted) missing.push({ what: "licenses", detail: `The Android SDK licenses are not accepted in ${sdk.root}` });
   if (sdk && compileSdk !== undefined && !sdk.platforms.includes(compileSdk)) missing.push({ what: "platform", detail: `Android platform ${compileSdk} is not installed in ${sdk.root}`, downloadMb: 80 });
   const env: NodeJS.ProcessEnv = { ...(o.env ?? process.env) };

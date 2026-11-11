@@ -88,6 +88,15 @@ jobs:
             const ok = r.ok && a.packageName === 'com.example.hello' && a.versionName === '0.3' && a.signature.v2plus && under(r.toolchain.jdk) && under(r.toolchain.sdk);
             if (!ok) process.exit(1);
           "
+      - name: the platform tethertrace installed was used as it is
+        run: |
+          test -f "$TETHERTRACE_HOME/toolchains/android-sdk/platforms/android-36/package.xml"
+          test ! -d "$TETHERTRACE_HOME/toolchains/android-sdk/cmdline-tools"
+          # If the Android Gradle Plugin had not recognised it, it would have installed the platform again.
+          if grep -n "Install Android SDK Platform" examples/android-hello/build/tethertrace/build.log; then
+            echo "::error title=SDK platform::Gradle installed the platform again, so the one tethertrace installed was not recognised"
+            exit 1
+          fi
       - name: what was downloaded
         run: node dist/cli.js toolchain list
       - name: second build works offline

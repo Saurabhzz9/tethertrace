@@ -31,6 +31,7 @@ All notable changes are listed here. The project follows [Semantic Versioning](h
 
 ### Changed
 
+- The managed Android SDK no longer uses Google's `sdkmanager`, which is deprecated. tethertrace reads Google's SDK index itself, downloads the one platform the project compiles against, checks its SHA-1 and writes the same `package.xml` the SDK manager would. This drops the 150 MB command-line tools download and the need for a JDK just to set up the SDK. An existing SDK that has `sdkmanager` still falls back to it if the direct install fails.
 - The explorer never taps switches, checkboxes or radio buttons, so it can't change an app's settings (found on a real phone).
 - The explorer also skips the area around a switch (a row or frame that holds one) and controls whose id names a switch or toggle. On a real phone it tapped the frame around a clock app's alarm switch, which opened "Turn off alarm".
 - The explorer skips controls that change the window mode (floating window, picture-in-picture, split screen). On a real phone it had left Calculator floating over another app.
