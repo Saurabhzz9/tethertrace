@@ -142,7 +142,7 @@ It is not only a check on tool arguments. Before a tool reads or touches the scr
 
 - If another app is in front, `tap`, `type_text`, `press_key`, `scroll`, `swipe`, `screenshot`, `ui_tree` and `wait_for` are refused. `launch_app` brings your app back.
 - If Android does not name an app (notification shade, lock screen) or the check fails, the answer is also no.
-- Raw coordinates must land on an element of your app, so the status bar and navigation bar are out of reach. A tap by text must match an element of your app.
+- Raw coordinates must land on an element of your app, and outside the status bar, navigation bar and gesture strips that Android reports (an app can draw underneath those, but a touch there opens the shade or goes home). A tap by text must match an element of your app.
 - The `home`, `recents` and `menu` keys are refused.
 - A YAML flow is checked before every step that acts, so it stops as soon as it leaves the app.
 - `record_screen` is off, because a recording cannot be limited to one app. Use `record: true` on a test instead. `list_apps` shows only your apps.
@@ -168,7 +168,7 @@ Every decision is appended to `~/.tethertrace/audit.jsonl` (`TETHERTRACE_HOME` m
 
 - The focus check and the action are two steps, so an app that changes the screen in between can still receive one action.
 - These checks apply to the MCP server. The `tethertrace` CLI runs as you and is not restricted.
-- The scope checks have been tested against a mock device, not yet on a real phone.
+- The scope checks were run on one real phone (realme, Android 14, 21 cases) and against a mock device. Other phones may report focus or system bars differently; when the server cannot read them it refuses.
 
 ## Good prompts
 

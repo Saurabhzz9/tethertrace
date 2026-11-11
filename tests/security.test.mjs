@@ -27,6 +27,7 @@ async function phone(opts = {}) {
   const state = { front: APP };
   const handler = (cmd, kind) => {
     if (kind === "exec") return cmd.startsWith("screencap") ? TINY_PNG : "";
+    if (cmd.includes("InsetsSource")) return state.insets ?? "";
     if (cmd.startsWith("dumpsys window")) return state.front ? `  mCurrentFocus=Window{1a2b3c u0 ${state.front}/${state.front}.MainActivity}\n` : "  mCurrentFocus=Window{9f8e7d u0 NotificationShade}\n";
     if (cmd.startsWith("uiautomator dump")) return screenOf(state.front ?? "com.android.systemui");
     if (cmd.startsWith("wm size")) return "Physical size: 1080x2400\n";
@@ -296,5 +297,26 @@ test("build_project reports a failure as an error and never builds something it 
     const seen = JSON.parse((await p.call("inspect_project", { dir: p.dir })).content[0].text);
     assert.deepEqual(seen, []);
     assert.ok((await p.audit()).some((e) => e.tool === "build_project" && e.decision === "allowed" && e.classes.includes("execute")));
+  } finally { await p.close(); }
+});
+
+test("system bars and gesture strips are off limits even where the app draws underneath them", async () => {
+  // Real values from a phone: the app's root covers the whole screen, so the UI tree alone would say
+  // a touch at y=120 belongs to the app. Android's insets say it is the gesture strip.
+  const p = await phone({ packages: [APP] });
+  try {
+    p.state.insets = [
+      "InsetsSource id=1 type=statusBars frame=[0,0][1080,96] visible=true flags=",
+      "InsetsSource id=2 type=mandatorySystemGestures frame=[0,0][1080,132] visible=true flags=",
+      "InsetsSource id=3 type=navigationBars frame=[0,2280][1080,2412] visible=true flags=",
+      "InsetsSource id=4 type=systemGestures frame=[0,0][0,0] visible=true flags=",
+      "InsetsSource id=5 type=navigationBars frame=[0,500][1080,900] visible=false flags=",
+    ].join(String.fromCharCode(10));
+    denied(await p.call("tap", { x: 540, y: 120 }), /540,120 belongs to com\.android\.systemui/);
+    denied(await p.call("tap", { x: 540, y: 2300 }), /belongs to com\.android\.systemui/);
+    denied(await p.call("swipe", { x1: 540, y1: 2390, x2: 540, y2: 1200 }), /belongs to com\.android\.systemui/); // swipe up from the bottom = go home
+    assert.deepEqual(p.acted(), []);
+    assert.match((await p.call("tap", { x: 540, y: 700 })).content[0].text, /Tapped 540,700/, "a hidden bar and an empty gesture area block nothing");
+    assert.match((await p.call("tap", { x: 540, y: 140 })).content[0].text, /Tapped 540,140/);
   } finally { await p.close(); }
 });

@@ -105,8 +105,33 @@ export class Device {
     return m ? m[1] : undefined;
   }
 
-  /** Package of the smallest on-screen element that contains the pixel, or undefined if none does. */
+  /**
+   * Screen areas that belong to the system even when an app draws underneath them: the status bar,
+   * the navigation bar and the gesture strips. A touch that starts there opens the notification
+   * shade or goes home, whatever app is in front.
+   */
+  async systemAreas(): Promise<[number, number, number, number][]> {
+    const t = (await this.shell("dumpsys window displays | grep -E 'InsetsSource'").catch(() => ({ text: "" }))).text;
+    const areas: [number, number, number, number][] = [];
+    for (const m of t.matchAll(/type=(statusBars|navigationBars|mandatorySystemGestures)\s+frame=\[(\d+),(\d+)\]\[(\d+),(\d+)\]\s+visible=true/g)) {
+      const r: [number, number, number, number] = [Number(m[2]), Number(m[3]), Number(m[4]), Number(m[5])];
+      if (r[2] > r[0] && r[3] > r[1] && !areas.some((a) => a.join() === r.join())) areas.push(r);
+    }
+    if (areas.length) return areas;
+    // Android did not say (older versions, unusual builds): assume a bar at the top and bottom edge.
+    const { w, h } = await this.screenSize();
+    return [
+      [0, 0, w, Math.round(h * 0.04)],
+      [0, Math.round(h * 0.95), w, h],
+    ];
+  }
+
+  /**
+   * Package that owns a pixel: "com.android.systemui" inside a system bar or gesture strip,
+   * otherwise the smallest on-screen element that contains it, or undefined if none does.
+   */
   async packageAt(x: number, y: number): Promise<string | undefined> {
+    if ((await this.systemAreas()).some((r) => x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3])) return "com.android.systemui";
     const hit = (await this.uiNodes())
       .filter((n) => n.pkg && x >= n.bounds[0] && x <= n.bounds[2] && y >= n.bounds[1] && y <= n.bounds[3])
       .sort((a, b) => (a.bounds[2] - a.bounds[0]) * (a.bounds[3] - a.bounds[1]) - (b.bounds[2] - b.bounds[0]) * (b.bounds[3] - b.bounds[1]))[0];
