@@ -93,6 +93,26 @@ export class Device {
     return Number.isInteger(pid) && pid > 0 ? pid : undefined;
   }
 
+  /**
+   * Package of the window that has input focus, or undefined when Android does not name one
+   * (notification shade, lock screen) or the answer cannot be read. Used to keep a package-scoped
+   * session inside its app.
+   */
+  async focusedPackage(): Promise<string | undefined> {
+    const t = (await this.shell("dumpsys window | grep -E 'mCurrentFocus'")).text;
+    const line = t.split(/\r?\n/).find((l) => l.includes("mCurrentFocus"));
+    const m = line && /mCurrentFocus=Window\{[^}]*?\s([A-Za-z][\w]*(?:\.[\w]+)+)\/[^}\s]*\}/.exec(line);
+    return m ? m[1] : undefined;
+  }
+
+  /** Package of the smallest on-screen element that contains the pixel, or undefined if none does. */
+  async packageAt(x: number, y: number): Promise<string | undefined> {
+    const hit = (await this.uiNodes())
+      .filter((n) => n.pkg && x >= n.bounds[0] && x <= n.bounds[2] && y >= n.bounds[1] && y <= n.bounds[3])
+      .sort((a, b) => (a.bounds[2] - a.bounds[0]) * (a.bounds[3] - a.bounds[1]) - (b.bounds[2] - b.bounds[0]) * (b.bounds[3] - b.bounds[1]))[0];
+    return hit?.pkg || undefined;
+  }
+
   /** Device clock in logcat's `-T` format, so later log reads start here without clearing anything. */
   async logMark() {
     return (await this.shell("date +'%m-%d %H:%M:%S.000'")).text.trim();
