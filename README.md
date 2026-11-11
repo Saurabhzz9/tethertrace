@@ -104,7 +104,7 @@ Then ask: *"Install app-release.apk on my phone, open the login screen, try sign
 
 <p align="center"><img src="docs/assets/mcp.png" alt="An AI agent's tool calls driving the phone, and the screenshot it received" width="900"></p>
 
-The agent gets these tools: `discover_devices`, `pair_device`, `select_device`, `device_info`, `list_apps`, `apk_info`, `screenshot`, `ui_tree`, `wait_for`, `tap`, `type_text`, `press_key`, `scroll`, `swipe`, `launch_app`, `stop_app`, `install_apk`, `app_logs`, `smoke_test`, `explore_app`, `run_flow`, `record_screen`, `explain_report`. Tests can record the screen with `record: true`.
+The agent gets these tools: `discover_devices`, `pair_device`, `select_device`, `device_info`, `list_apps`, `apk_info`, `screenshot`, `ui_tree`, `wait_for`, `tap`, `type_text`, `press_key`, `scroll`, `swipe`, `launch_app`, `stop_app`, `install_apk`, `app_logs`, `smoke_test`, `explore_app`, `run_flow`, `verify_app`, `app_memory`, `record_screen`, `explain_report`. Tests can record the screen with `record: true`.
 
 Safety is enforced by the server, not left to the client:
 
@@ -228,6 +228,7 @@ Or skip the code and give an agent the MCP server (above): it gets the same powe
 | `test <apk or package>` | Zero-config: install, explore screens, catch crashes, write report + flows |
 | `smoke` | Install (optional) → cold start → watch → evidence + verdict |
 | `run <flow.yaml>` | Run a YAML test with a full report |
+| `verify` · `memory` | After a new build, re-run only the flows that could be affected and report regressions · show what is remembered about an app ([docs/verify.md](docs/verify.md)) |
 | `explain <report>` | Summarise a report, optionally with an AI model |
 | `mcp` | MCP server for AI agents |
 | `shell <cmd>` | Run a shell command on the phone |

@@ -35,19 +35,20 @@ An Android build needs three things. tethertrace looks for each one on your comp
 | Need | Looked for in | If missing |
 |---|---|---|
 | A JDK that fits the project (17+ for Android Gradle Plugin 8, and no newer than its Gradle version supports) | `JAVA_HOME`, `~/.jdks`, `~/.gradle/jdks`, SDKMAN, the system JVM folders, Android Studio's bundled JDK, `PATH` | Eclipse Temurin from adoptium.net, about 190 MB |
-| An Android SDK | the project's `local.properties`, `ANDROID_HOME`, `ANDROID_SDK_ROOT`, the default SDK folders | Google's command-line tools from dl.google.com, about 150 MB |
-| The platform the project compiles against, and accepted SDK licenses | that SDK | installed with `sdkmanager` (one platform, about 80 MB) |
+| An Android SDK | the project's `local.properties`, `ANDROID_HOME`, `ANDROID_SDK_ROOT`, the default SDK folders | a new SDK folder in `~/.tethertrace/toolchains/android-sdk` |
+| Accepted SDK licenses | that SDK | recorded after you agree to Google's terms |
+| The platform the project compiles against | that SDK | downloaded straight from Google's SDK index on dl.google.com (one platform, about 65 MB, SHA-1 checked) |
 
 Build-tools are left to the Android Gradle Plugin, which downloads the exact version it wants once the licenses are accepted. Gradle itself comes from the project's wrapper, and libraries from the project's own repositories, as in any Gradle build.
 
-A first build on an empty computer therefore downloads roughly 0.5 GB of tools plus the project's dependencies. That is the smallest set that can compile an Android app. tethertrace does not download Android Studio, emulator images, `adb` or SDK platforms your project does not use.
+A first build on an empty computer therefore downloads roughly 0.4 GB of tools plus the project's dependencies. That is the smallest set that can compile an Android app. tethertrace does not download Android Studio, emulator images, `adb` or SDK platforms your project does not use.
 
 ### Nothing is downloaded without you
 
 - `tethertrace build` asks before each download and before accepting the Android SDK licenses, and says how big it is.
 - `tethertrace build --yes` approves them all, for scripts and CI.
 - Without a terminal and without `--yes`, the answer is no, and the build stops with what is missing.
-- Downloads are checksum-verified (SHA-256 for the JDK, SHA-1 from Google's index for the SDK tools) and deleted if they do not match.
+- Downloads are checksum-verified (SHA-256 for the JDK, SHA-1 from Google's index for the SDK platform) and deleted if they do not match.
 - Everything goes into `~/.tethertrace/toolchains` (`TETHERTRACE_HOME` moves it). Nothing global is changed, and your project files are not modified.
 
 ```bash
@@ -108,6 +109,17 @@ The MCP server has three tools for this:
 | `build_project` | execute | Runs the build. Only with `tethertrace mcp --allow-build` |
 
 A build runs the project's build scripts on your computer, so `build_project` is off unless you start the server with `--allow-build`. An agent cannot approve downloads or licenses: that needs `--allow-downloads` from you as well. `--allow-build` does not enable the `shell` tool, and `--allow-shell` does not enable builds.
+
+### Why not `sdkmanager` or Google's Android CLI
+
+Google has deprecated `sdkmanager` and points to its new Android CLI (`android sdk install`). tethertrace uses neither to set up the SDK:
+
+- `sdkmanager` needs a 150 MB download and a JDK just to fetch one platform, and it is on its way out.
+- The Android CLI is published without checksums, downloads its own runtime into `~/.android` on first use, reports usage to Google unless every call passes `--no-metrics`, and has no build for Intel Macs or Linux on ARM.
+
+Both read the same public index, `repository2-3.xml` on dl.google.com. tethertrace reads it directly: it finds the platform, downloads the archive, checks the SHA-1 from the index, unpacks it and writes the `package.xml` the SDK manager would write. CI builds the example app this way on Windows, Linux and macOS, and fails if Gradle does not accept the platform as installed.
+
+If you already use the Android CLI or Android Studio, nothing changes: tethertrace finds the SDK they manage and uses it.
 
 ## Limits
 

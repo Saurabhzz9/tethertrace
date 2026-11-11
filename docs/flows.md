@@ -5,6 +5,7 @@ A flow is a list of steps run in order against one app. The first failing step s
 ```yaml
 app: com.example.app        # required: application id
 name: checkout              # optional: report folder name (defaults to the file name)
+covers: [lib/cart/**]       # optional: source this flow tests, used by `tethertrace verify` (see verify.md)
 steps:
   - launch
   - tap: "Add to cart"

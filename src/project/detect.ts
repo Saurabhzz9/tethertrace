@@ -186,7 +186,20 @@ async function gradleModules(gradleRoot: string, settings: string): Promise<{ pa
   return out;
 }
 
-async function readAndroidModule(path: string, dir: string): Promise<AndroidModule | undefined> {
+/**
+ * An SDK level written as a number, or as a name defined elsewhere: `rootProject.ext.compileSdkVersion`,
+ * `project.compileSdk`, a bare variable. Names are looked up in `shared` (the root build file and
+ * gradle.properties), which is how React Native and many older projects keep their versions.
+ */
+export function sdkLevel(key: string, android: string, shared: string): number | undefined {
+  const direct = num(new RegExp(`${key}(?:Version)?\\s*=?\\s*\\(?\\s*(\\d+)`), android);
+  if (direct !== undefined) return direct;
+  const ref = str(new RegExp(`${key}(?:Version)?\\s*=?\\s*\\(?\\s*(?:[\\w.]+\\.)?([A-Za-z_]\\w*)`), android);
+  if (!ref) return undefined;
+  return num(new RegExp(`(?:^|[\\s.{;])${ref}\\s*=\\s*["']?(\\d+)`, "m"), shared);
+}
+
+async function readAndroidModule(path: string, dir: string, shared = ""): Promise<AndroidModule | undefined> {
   const file = await firstExisting(dir, ["build.gradle.kts", "build.gradle"]);
   if (!file) return undefined;
   const src = stripGradleComments(await read(file));
@@ -203,9 +216,9 @@ async function readAndroidModule(path: string, dir: string): Promise<AndroidModu
     dir,
     applicationId: str(/applicationId\s*=?\s*["']([\w.]+)["']/, android),
     namespace: str(/namespace\s*=?\s*["']([\w.]+)["']/, android),
-    compileSdk: num(/compileSdk(?:Version)?\s*=?\s*\(?\s*(\d+)/, android),
-    minSdk: num(/minSdk(?:Version)?\s*=?\s*\(?\s*(\d+)/, android),
-    targetSdk: num(/targetSdk(?:Version)?\s*=?\s*\(?\s*(\d+)/, android),
+    compileSdk: sdkLevel("compileSdk", android, shared),
+    minSdk: sdkLevel("minSdk", android, shared),
+    targetSdk: sdkLevel("targetSdk", android, shared),
     buildToolsVersion: str(/buildToolsVersion\s*=?\s*\(?\s*["']([\d.]+)["']/, android),
     language: hasKotlin ? "kotlin" : hasJava ? "java" : "unknown",
     buildTypes: [...buildTypes],
@@ -222,8 +235,9 @@ export async function inspectGradleAndroid(gradleRoot: string): Promise<AndroidP
   const settings = settingsFile ? await read(settingsFile) : "";
   const candidates = await gradleModules(gradleRoot, settings);
   const modules: AndroidModule[] = [];
+  const shared = `${rootBuild ? stripGradleComments(await read(rootBuild)) : ""}\n${await read(join(gradleRoot, "gradle.properties"))}`;
   for (const c of candidates) {
-    const m = await readAndroidModule(c.path, c.dir);
+    const m = await readAndroidModule(c.path, c.dir, shared);
     if (m && !modules.some((x) => x.dir === m.dir)) modules.push(m);
   }
   if (!modules.length) return undefined;

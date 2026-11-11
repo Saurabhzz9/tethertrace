@@ -99,6 +99,8 @@ tethertrace explain reports/<run> -m openai-compatible:<model> --base-url http:/
 | `smoke_test` | yes | Install → launch → watch → evidence and verdict |
 | `explore_app` | yes | Zero-config: install, walk the screens (skipping risky buttons), catch crashes, write flows; returns `coverage.level` so "no crash" on a screen it couldn't tap isn't read as a pass |
 | `run_flow` | yes | Run a YAML flow (file or inline) and return the result |
+| `verify_app` | yes | Check the installed build against what is remembered: re-run the flows that could be affected, explore a new build, report regressions ([verify.md](verify.md)) |
+| `app_memory` | no | What is remembered about an app: builds, screens, how each flow went |
 | `shell` | yes | Only with `--allow-shell` |
 
 ## Prompts
@@ -128,8 +130,8 @@ Every tool belongs to a permission class, and every call passes one policy check
 
 | Class | Tools | Granted when |
 |---|---|---|
-| `read` | `discover_devices`, `select_device`, `device_info`, `list_apps`, `apk_info`, `screenshot`, `record_screen`, `ui_tree`, `wait_for`, `app_logs`, `explain_report` | always |
-| `interact` | `tap`, `type_text`, `press_key`, `scroll`, `swipe`, `launch_app`, `stop_app`, `run_flow`, `smoke_test`, `explore_app` | not `--read-only` |
+| `read` | `discover_devices`, `select_device`, `device_info`, `list_apps`, `apk_info`, `screenshot`, `record_screen`, `ui_tree`, `wait_for`, `app_logs`, `explain_report`, `app_memory` | always |
+| `interact` | `tap`, `type_text`, `press_key`, `scroll`, `swipe`, `launch_app`, `stop_app`, `run_flow`, `smoke_test`, `explore_app`, `verify_app` | not `--read-only` |
 | `install` | `install_apk`, and `smoke_test` / `explore_app` when given an APK | not `--read-only` |
 | `execute` | `shell` | `--allow-shell`, and neither `--read-only` nor `--package` |
 | `sensitive` | `pair_device` | not `--read-only` |
@@ -163,6 +165,10 @@ This protects you from a client that approves tool calls automatically. It canno
 ### Audit log
 
 Every decision is appended to `~/.tethertrace/audit.jsonl` (`TETHERTRACE_HOME` moves it): time, tool, classes, allowed or denied, the reason, and the package or file involved. Typed text is never written. Shell commands are recorded up to 200 characters.
+
+### HOL Guard
+
+[HOL Guard](https://github.com/hashgraph-online/hol-guard) users can find a ready catalog entry for tethertrace in [`integrations/hol-guard`](../integrations/hol-guard/README.md): read tools keep the existing policy, everything that acts is reviewed, and `shell` is blocked. It is optional and tethertrace does not depend on it.
 
 ### Known limits
 

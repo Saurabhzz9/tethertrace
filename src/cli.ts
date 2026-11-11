@@ -12,6 +12,7 @@ import { explainLocally, explainWithModel, loadReport } from "./explain.js";
 import { explore } from "./explore.js";
 import { startMcpServer } from "./mcp.js";
 import { registerBuildCommands } from "./cli-build.js";
+import { registerVerifyCommands } from "./cli-verify.js";
 import { approve, listApprovals, parseClasses } from "./policy.js";
 import { loadFlow, runFlow } from "./runner.js";
 import { formatNodes, smoke } from "./smoke.js";
@@ -404,6 +405,7 @@ program
   });
 
 registerBuildCommands(program, { withDevice, stamp, deviceOpt });
+registerVerifyCommands(program, { withDevice, stamp, deviceOpt });
 
 // ---------------------------------------------------------------- AI agents
 

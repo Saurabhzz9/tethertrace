@@ -352,3 +352,22 @@ test("artifacts: signature detection and choosing the APK that fits the phone", 
   assert.equal(pickArtifact([a("out/app-debug.apk"), ...split], "x86").path, "out/app-debug.apk");
   assert.equal(pickArtifact([a("out/app-release-unsigned.apk", false)]), undefined, "an unsigned APK is never chosen");
 });
+
+test("SDK levels kept in the root build file (React Native, older projects) are resolved", async () => {
+  const { sdkLevel, inspectGradleAndroid } = await import("../dist/index.js");
+  const shared = "buildscript { ext {\n minSdkVersion = 24\n compileSdkVersion = 37\n targetSdkVersion = 36\n} }";
+  assert.equal(sdkLevel("compileSdk", "compileSdk rootProject.ext.compileSdkVersion", shared), 37);
+  assert.equal(sdkLevel("minSdk", "minSdkVersion rootProject.ext.minSdkVersion", shared), 24);
+  assert.equal(sdkLevel("compileSdk", "compileSdk = 34", shared), 34, "a number in the module wins");
+  assert.equal(sdkLevel("compileSdk", "compileSdk = flutter.compileSdkVersion", shared), 37);
+  assert.equal(sdkLevel("compileSdk", "compileSdk = someUnknownName", shared), undefined, "an unknown name stays unknown");
+
+  const root = await tmp();
+  await mkdir(join(root, "app"), { recursive: true });
+  await writeFile(join(root, "settings.gradle"), "include ':app'\n");
+  await writeFile(join(root, "build.gradle"), `${shared}\n`);
+  await writeFile(join(root, "app", "build.gradle"), 'apply plugin: "com.android.application"\nandroid {\n  compileSdk rootProject.ext.compileSdkVersion\n  namespace "com.example.rn"\n  defaultConfig { minSdkVersion rootProject.ext.minSdkVersion }\n}\n');
+  const info = await inspectGradleAndroid(root);
+  assert.equal(info.modules[0].compileSdk, 37);
+  assert.equal(info.modules[0].minSdk, 24);
+});
