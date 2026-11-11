@@ -21,4 +21,4 @@ export { Policy, PolicyError, TOOL_CLASSES, PERMISSION_CLASSES, parseClasses, fi
 export { detectProjects, describeProject, inspectGradleAndroid, ADAPTERS, ADAPTER_API_VERSION, type DetectedProject, type ProjectAdapter, type AndroidProjectInfo, type AndroidModule, type ProjectKind, type Platform } from "./project/detect.js";
 export { build, selectProject, classifyBuildFailure, shouldRetryOverIpv4, findApks, apkSignature, pickArtifact, BuildError, type BuildOptions, type BuildResult, type BuildArtifact, type BuildErrorCategory } from "./build.js";
 export { resolveAndroidToolchain, findJdks, pickJdk, findSdk, parseJavaVersion, parseCmdlineTools, parseLocalProperties, installJdk, installCmdlineTools, listManaged, cleanManaged, toolchainsDir, type AndroidToolchain, type Jdk, type AndroidSdk, type Consent } from "./toolchain/android.js";
-export { download, extractZip, freeBytes, ToolchainError } from "./toolchain/fetch.js";
+export { download, extractZip, freeBytes, quoteForCmd, ToolchainError } from "./toolchain/fetch.js";
