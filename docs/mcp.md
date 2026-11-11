@@ -166,6 +166,10 @@ This protects you from a client that approves tool calls automatically. It canno
 
 Every decision is appended to `~/.tethertrace/audit.jsonl` (`TETHERTRACE_HOME` moves it): time, tool, classes, allowed or denied, the reason, and the package or file involved. Typed text is never written. Shell commands are recorded up to 200 characters.
 
+### HOL Guard
+
+[HOL Guard](https://github.com/hashgraph-online/hol-guard) users can find a ready catalog entry for tethertrace in [`integrations/hol-guard`](../integrations/hol-guard/README.md): read tools keep the existing policy, everything that acts is reviewed, and `shell` is blocked. It is optional and tethertrace does not depend on it.
+
 ### Known limits
 
 - The focus check and the action are two steps, so an app that changes the screen in between can still receive one action.

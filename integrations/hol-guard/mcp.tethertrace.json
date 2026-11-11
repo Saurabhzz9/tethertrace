@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "guard.mcp-server-contribution.v1",
+  "id": "mcp.tethertrace",
+  "version": "1.0.0",
+  "name": "tethertrace",
+  "description": "Lets an agent test Android apps on your own phone over Wi-Fi: screen, input, installs, YAML flows and builds. Looking at the phone keeps your existing policy; touching it, installing, building and pairing are reviewed; raw shell is blocked. The server enforces its own policy too: read-only mode, per-app scope checked on the phone, confirmation and a local audit log. Off until you turn it on.",
+  "trustClass": "external",
+  "activation": "opt-in",
+  "publisher": {
+    "id": "io.github.saurabhzz9",
+    "displayName": "Saurabhzz9",
+    "url": "https://github.com/Saurabhzz9"
+  },
+  "icon": { "kind": "react-icon", "name": "HiMiniCommandLine", "background": "#0F766E" },
+  "homepage": "https://github.com/Saurabhzz9/tethertrace",
+  "license": "MIT",
+  "launch": {
+    "kind": "direct-command",
+    "command": "tethertrace"
+  },
+  "riskClasses": ["external-device-control", "external-screen-capture", "external-third-party-code-install", "external-command-execution"],
+  "tools": [
+    { "name": "discover_devices", "state": "inherit" },
+    { "name": "select_device", "state": "inherit" },
+    { "name": "device_info", "state": "inherit" },
+    { "name": "list_apps", "state": "inherit" },
+    { "name": "apk_info", "state": "inherit" },
+    { "name": "screenshot", "state": "inherit" },
+    { "name": "record_screen", "state": "inherit" },
+    { "name": "ui_tree", "state": "inherit" },
+    { "name": "wait_for", "state": "inherit" },
+    { "name": "app_logs", "state": "inherit" },
+    { "name": "explain_report", "state": "inherit" },
+    { "name": "inspect_project", "state": "inherit" },
+    { "name": "toolchain_status", "state": "inherit" },
+    { "name": "app_memory", "state": "inherit" },
+    { "name": "tap", "state": "review" },
+    { "name": "type_text", "state": "review" },
+    { "name": "press_key", "state": "review" },
+    { "name": "scroll", "state": "review" },
+    { "name": "swipe", "state": "review" },
+    { "name": "launch_app", "state": "review" },
+    { "name": "stop_app", "state": "review" },
+    { "name": "run_flow", "state": "review" },
+    { "name": "smoke_test", "state": "review" },
+    { "name": "explore_app", "state": "review" },
+    { "name": "verify_app", "state": "review" },
+    { "name": "install_apk", "state": "review" },
+    { "name": "build_project", "state": "review" },
+    { "name": "pair_device", "state": "review" },
+    { "name": "shell", "state": "block" },
+    { "name": "other", "state": "review" }
+  ],
+  "referenceUrls": [
+    "https://github.com/Saurabhzz9/tethertrace",
+    "https://github.com/Saurabhzz9/tethertrace/blob/main/docs/mcp.md",
+    "https://github.com/Saurabhzz9/tethertrace/blob/main/SECURITY.md",
+    "https://github.com/Saurabhzz9/tethertrace/blob/main/src/policy.ts"
+  ],
+  "saferAlternatives": [
+    "Start the server with tethertrace mcp --read-only: only the tools that look at the phone are listed, and nothing can tap, type, install, build or run a shell.",
+    "Start it with --package com.example.app: the server checks which app is in front before every read and every touch, and refuses when it is another app or it cannot tell.",
+    "Leave --allow-shell and --allow-build off (the default); the shell and build_project tools are then not listed at all.",
+    "Use --confirm interact,install so the server itself asks a person before each such call, and read ~/.tethertrace/audit.jsonl to see what was done.",
+    "These defaults match a server started as the tethertrace command. Started another way (for example node dist/cli.js mcp), it keeps Guard's normal handling."
+  ]
+}
