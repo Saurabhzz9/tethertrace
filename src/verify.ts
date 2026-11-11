@@ -254,7 +254,8 @@ export async function verify(d: Device, o: VerifyOptions): Promise<VerifySummary
     const changes = rememberExploration(memory, build.id, s, report);
     exploration = { verdict: s.verdict, reason: s.reason, coverage: s.coverage, screens: s.screens.length, changes, report };
     notes.push("Reaching a screen shows it opens without a crash. It does not show that what the screen does is correct; flows with assertions do that.");
-  } else if (o.mode === "changed") notes.push("Not explored again: this build was already explored. Use --full to explore anyway.");
+  } else if (o.explore === false) notes.push("Not explored, as asked. New or changed screens were not looked for.");
+  else notes.push("Not explored again: this build was already explored. Use --full to explore anyway.");
 
   rememberBuild(memory, build, startedAt, source?.commit);
   const memoryPath = await saveMemory(memory, o.home);
@@ -302,8 +303,8 @@ export function describeVerify(s: VerifySummary): string {
   }
   const e = s.exploration;
   if (e) {
-    out.push(`Explore: ${e.verdict} (${e.reason}); ${e.screens} screens, coverage ${e.coverage.level}, ${e.coverage.tapped} tapped`);
-    if (e.changes.first) out.push(`  First exploration: ${e.screens} screens recorded.`);
+    out.push(`Explore: ${e.verdict} (${e.reason}); ${e.screens} screen${e.screens === 1 ? "" : "s"}, coverage ${e.coverage.level}, ${e.coverage.tapped} tapped`);
+    if (e.changes.first) out.push(`  First exploration: ${e.screens} screen${e.screens === 1 ? "" : "s"} recorded.`);
     else {
       if (e.changes.added.length) out.push(`  New or changed screens: ${e.changes.added.map((x) => x.title).slice(0, 8).join(" | ")}`);
       if (e.changes.notReached.length) out.push(`  Known screens not reached this time: ${e.changes.notReached.map((x) => x.title).slice(0, 8).join(" | ")}`);
