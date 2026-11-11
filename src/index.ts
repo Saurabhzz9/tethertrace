@@ -7,7 +7,7 @@ export * as protocol from "./adb/protocol.js";
 export { SocketReader } from "./adb/reader.js";
 export { Device, assertPackage } from "./device.js";
 export { smoke, classify, filterAppLog, type SmokeSummary, type SmokeVerdict } from "./smoke.js";
-export { parseUiNodes, type UiNode } from "./device.js";
+export { parseUiNodes, hasEmptyWebView, type UiNode } from "./device.js";
 export { findNodes, pickOne, SelectorError, visibleLabels, type Selector } from "./device.js";
 export { runFlow, loadFlow, type RunSummary, type Flow, type FailureCategory } from "./runner.js";
 export { readApkInfo, parseManifest, readZipEntry, type ApkInfo } from "./apk.js";

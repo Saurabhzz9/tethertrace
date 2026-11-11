@@ -243,7 +243,7 @@ tethertrace run app.tapp --platform android        # run it on your phone inside
 tethertrace convert app.tapp --to apk              # or make a standalone Android app from it
 ```
 
-A `.tapp` is a ZIP of HTML, JavaScript and WebAssembly with a manifest that lists every file's SHA-256, the permissions it wants and the origins it may contact. A runtime verifies it, gives it its own origin and enforces that list. The desktop runtime is tested; the Android runtime builds but has not been run on a real phone yet; iOS is not built and needs a Mac, an iPhone and Apple signing. The design, the format and the research behind both features: **[docs/universal-runtime](docs/universal-runtime/README.md)**.
+A `.tapp` is a ZIP of HTML, JavaScript and WebAssembly with a manifest that lists every file's SHA-256, the permissions it wants and the origins it may contact. A runtime verifies it, gives it its own origin and enforces that list. The desktop and Android runtimes have been run for real (Android on one phone, including a YAML flow against a package); iOS is not built and needs a Mac, an iPhone and Apple signing. The design, the format and the research behind both features: **[docs/universal-runtime](docs/universal-runtime/README.md)**.
 
 ## Build your own AI phone agent on top of it
 

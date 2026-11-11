@@ -11,7 +11,7 @@ The short answers, with the evidence behind them in the two reports in this fold
 |---|---|
 | Run an APK on iOS as it is | No. Nothing on iOS can load it, and nothing here pretends to. [apk-on-ios.md](apk-on-ios.md) |
 | Convert an APK into an iOS app | No. There is no converter, and the reports explain why one would still leave the Android framework missing. |
-| One package for web-technology apps on several platforms | Yes for Android and the desktop, both built and tested here. iOS is designed, not built. [architectures.md](architectures.md) |
+| One package for web-technology apps on several platforms | Yes for Android and the desktop, both built and run here (Android on a real phone). iOS is designed, not built. [architectures.md](architectures.md) |
 
 Nothing in this folder has been tested on an iOS device. The project has no iPhone, no Mac and no Apple signing certificate.
 
@@ -23,8 +23,8 @@ Nothing in this folder has been tested on an iOS device. The project has no iPho
 | `tethertrace compatibility app.apk --target ios` | Implemented. A static report that always says "does not run unmodified" |
 | `.tapp` format 1: `pack`, `tapp verify`, `tapp keygen` | Implemented, tested |
 | Desktop runtime: `run app.tapp --platform desktop` | Implemented, tested automatically and in a real browser |
-| Android runtime: `run app.tapp --platform android` | Implemented. The host app builds, and the hand-over is tested against a simulated phone. **Not yet run on a real phone** |
-| `convert app.tapp --to apk` | Implemented. Produces a standalone APK with the package inside. Built locally; not yet run on a real phone |
+| Android runtime: `run app.tapp --platform android` | Implemented, run on a real phone (see "Verified on a phone" below) |
+| `convert app.tapp --to apk` | Implemented. The standalone APK was installed and explored on a real phone, and CI builds one on Windows, Linux and macOS |
 | `convert app.apk --to tapp` | Implemented for Cordova and Capacitor APKs: packs their web layer only |
 | iOS runtime, `--platform ios`, `--to ios` | Not implemented. The commands explain why and exit with code 2 |
 
@@ -225,9 +225,26 @@ tethertrace compatibility app.apk --target ios
 - Run native code. Games work as far as WebGL, WebGPU and WebAssembly in the web view take them.
 - On a stock iPhone, in any future version: run just-in-time compiled code outside the web view, load native code that is not in the signed app, or install without Apple-issued signing.
 
+## Verified on a phone
+
+On a realme RMX3563 with Android 14, with the sample in `examples/tapp-hello`:
+
+| Check | Result |
+|---|---|
+| `run hello.tapp --platform android` | The runtime was built, installed, given the package and started. First start about 1 second |
+| The page inside the runtime | Reported `android`, ran WebAssembly, and its request to a site outside the package was refused |
+| Storage | A counter set with `tapp.storage` was still there after the runtime was stopped and started again |
+| A 12-step YAML flow (`tethertrace run`) | Passed, including a restart in the middle |
+| A package with one file changed after packing, pushed straight to the phone | Refused on the phone: "app.js does not match the manifest" |
+| A package path that leaves the runtime's folder | Refused |
+| `convert hello.tapp --to apk`, then `tethertrace test` on it | Installed under the package's own id, explored without a crash, coverage `ok` |
+
+Running it this way found two bugs in tethertrace itself, both fixed: a label containing a double quote was invisible (Android then writes the attribute in single quotes), and the first read of a WebView screen came back empty because a WebView builds its accessibility tree only after it is first asked.
+
 ## Not verified
 
-- The Android runtime on a real phone. The host builds and its checks are written, but no package has been opened on a device yet.
+- Any phone other than that one.
+- A package that uses the `network` permission against a real server.
 - Signature checking on the phone. The command line verifies `tapp.sig`; the Android host checks file hashes only.
 - Performance. Nothing was measured, so no numbers are given.
 - Anything on iOS.
@@ -235,10 +252,9 @@ tethertrace compatibility app.apk --target ios
 
 ## Roadmap
 
-1. Run the sample package on a real Android phone and add it to the automated checks.
-2. Verify `tapp.sig` in the Android host and remember each package's key, so an update must come from the same publisher.
-3. More runtime API: clipboard, geolocation, camera, with a permission prompt in the host.
-4. An iOS host project generated from the same package. This needs a contributor with a Mac, an iPhone and an Apple developer account.
-5. A host on a phone that can be driven by `verify`, so packages get the same regression checks as APKs.
+1. Verify `tapp.sig` in the Android host and remember each package's key, so an update must come from the same publisher.
+2. More runtime API: clipboard, geolocation, camera, with a permission prompt in the host.
+3. An iOS host project generated from the same package. This needs a contributor with a Mac, an iPhone and an Apple developer account.
+4. Packages driven by `verify`, so packages get the same regression checks as APKs.
 
 The APK-on-iOS question stays a research note. The analyzer is the part of it that is real.

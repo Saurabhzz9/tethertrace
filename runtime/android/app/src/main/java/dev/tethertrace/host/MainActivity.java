@@ -65,6 +65,9 @@ public class MainActivity extends Activity {
             refuse(e.getMessage() == null ? e.toString() : e.getMessage());
             return;
         }
+        // Remember a package only once it has passed every check.
+        String named = getIntent().getStringExtra("tapp");
+        if (named != null) getSharedPreferences("tapp_host", MODE_PRIVATE).edit().putString("last", named).apply();
         show();
     }
 
@@ -90,7 +93,11 @@ public class MainActivity extends Activity {
         try (InputStream in = getAssets().open(BUNDLED); FileOutputStream o = new FileOutputStream(out)) {
             copy(in, o);
         } catch (java.io.FileNotFoundException e) {
-            throw new Exception("No package to run. Start one with: tethertrace run app.tapp --platform android");
+            // Opened from the launcher, or by a test's "launch" step: use the package that ran last.
+            String last = getSharedPreferences("tapp_host", MODE_PRIVATE).getString("last", null);
+            File f = last == null ? null : new File(getFilesDir(), last);
+            if (f == null || !f.isFile()) throw new Exception("No package to run. Start one with: tethertrace run app.tapp --platform android");
+            return f;
         }
         return out;
     }
