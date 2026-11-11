@@ -13,7 +13,7 @@ Use the MCP tools when they are connected (`explore_app`, `run_flow`, `ui_tree`,
 
 Run `tethertrace info`.
 
-- **Command not found:** install with `npm install -g github:Saurabhzz9/tethertrace`.
+- **Command not found:** install with `npm install -g tethertrace`.
 - **`No phone found on this network`:** ask the user to turn on **Settings → Developer options → Wireless debugging**, with the phone and computer on the same Wi-Fi.
 - **`TLS_REJECTED` or never paired:** ask the user to tap **Pair device with pairing code** and give you the 6-digit code, then run `tethertrace pair <code>`. Pairing is remembered.
 - **`ECONNREFUSED`:** Wireless debugging turned itself off (screen lock, Wi-Fi change). Ask the user to turn it on again; no re-pairing is needed.

@@ -5,7 +5,7 @@
 Pair the phone once first (`tethertrace pair <code>`); the server reuses that pairing. Install tethertrace globally so the `tethertrace` command exists:
 
 ```bash
-npm install -g github:Saurabhzz9/tethertrace
+npm install -g tethertrace
 ```
 
 If a client cannot find the command (common on Windows GUI apps), use Node directly: `"command": "node"`, `"args": ["<path-to>/tethertrace/dist/cli.js", "mcp"]`. `npm root -g` prints where global packages live.
