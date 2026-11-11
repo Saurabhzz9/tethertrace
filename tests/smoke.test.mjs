@@ -105,3 +105,46 @@ test("install streams a large APK in chunks and checks for Success", async () =>
     await dev.close();
   }
 });
+
+test("install on a link that goes dead fails with how far it got, instead of hanging", async () => {
+  // The phone takes the first 600 KB, then never acknowledges again.
+  const dev = await startAdbd({ mode: "tls", trusted: [key.publicKeyString], handler: phone(), upload: { stallAfter: 600 * 1024 } });
+  const dir = await mkdtemp(join(tmpdir(), "tt-apk-"));
+  const apk = join(dir, "app.apk");
+  await writeFile(apk, Buffer.alloc(2 * 1024 * 1024, 7));
+  try {
+    const d = await Device.connect({ host: "127.0.0.1", port: dev.port, key });
+    const progress = [];
+    const t0 = Date.now();
+    await assert.rejects(
+      d.install(apk, { stallTimeoutMs: 400, onProgress: (sent) => progress.push(sent) }),
+      (e) => e.code === "TIMEOUT" && /Install stalled after 0\.5 of 2\.1 MB: the phone did not acknowledge data/.test(e.message),
+    );
+    assert.ok(Date.now() - t0 < 5000, "fails soon after the stall, not after the full install timeout");
+    assert.deepEqual(progress, [256 * 1024, 512 * 1024], "progress only counts acknowledged chunks");
+    // Nothing was sent after the chunk that got no answer: one chunk in flight, never a queue.
+    assert.equal(dev.log.filter((l) => l.uploadChunk).length, 3);
+    d.close();
+  } finally {
+    await dev.close();
+  }
+});
+
+test("install on a slow link still completes, one acknowledged chunk at a time", async () => {
+  const dev = await startAdbd({ mode: "tls", trusted: [key.publicKeyString], handler: phone(), upload: { ackDelayMs: 40 } });
+  const dir = await mkdtemp(join(tmpdir(), "tt-apk-"));
+  const apk = join(dir, "app.apk");
+  const size = 1024 * 1024 + 123;
+  await writeFile(apk, Buffer.alloc(size, 3));
+  try {
+    const d = await Device.connect({ host: "127.0.0.1", port: dev.port, key });
+    const progress = [];
+    assert.match(await d.install(apk, { stallTimeoutMs: 2000, onProgress: (sent, total) => progress.push([sent, total]) }), /Success/);
+    d.close();
+    const chunks = dev.log.filter((l) => l.uploadChunk).map((l) => l.uploadChunk);
+    assert.deepEqual(chunks, [262144, 262144, 262144, 262144, 123], "sent in chunks of the size the phone asked for");
+    assert.deepEqual(progress.at(-1), [size, size]);
+  } finally {
+    await dev.close();
+  }
+});

@@ -154,7 +154,14 @@ program
   .action(async (apk: string, o: { device?: string }) => {
     const info = await readApkInfo(apk);
     await withDevice(o.device, async (d) => {
-      await d.install(apk);
+      // Say how far a big upload is, at most every 10%, so a slow link does not look like a hang.
+      let shown = 0;
+      await d.install(apk, {
+        onProgress: (sent, total) => {
+          const pct = Math.floor((sent / total) * 10) * 10;
+          if (total > 20e6 && pct > shown && pct < 100) console.error(`  ${(shown = pct)}% (${(sent / 1e6).toFixed(0)} of ${(total / 1e6).toFixed(0)} MB)`);
+        },
+      });
       console.log(`Installed ${info.packageName} ${info.versionName ?? ""}`.trim());
     });
   });

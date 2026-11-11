@@ -52,6 +52,9 @@ export interface ExecResult {
   exitCode: number | null;
 }
 
+/** How long a write may make no progress before it is treated as a dead link. */
+export const DEFAULT_STALL_TIMEOUT_MS = 30_000;
+
 /** One logical ADB stream (a shell, a service, a sync session...). */
 export class AdbStream {
   private queue: Buffer[] = [];
@@ -81,13 +84,29 @@ export class AdbStream {
     return Buffer.concat(parts);
   }
 
-  async write(data: Buffer) {
+  /**
+   * Send data to the device. ADB allows one unacknowledged chunk per stream, so each chunk waits
+   * for the device's OKAY, and for the socket to take the bytes, before the next one is written.
+   * That keeps at most one chunk in memory however slow the link is. If neither happens within
+   * `stallTimeoutMs` the stream is closed and the write fails, instead of waiting forever on a
+   * link that has stopped moving.
+   */
+  async write(data: Buffer, opts: { stallTimeoutMs?: number } = {}) {
+    const stallMs = opts.stallTimeoutMs ?? DEFAULT_STALL_TIMEOUT_MS;
     for (let off = 0; off < data.length; off += this.conn.maxPayload) {
       if (this.closed) throw new AdbError("CLOSED", `Stream ${this.service} is closed`);
       const chunk = data.subarray(off, off + this.conn.maxPayload);
       const acked = new Promise<void>((resolve, reject) => (this.ackWaiter = { resolve, reject }));
-      this.conn.send({ command: A_WRTE, arg0: this.localId, arg1: this.remoteId, payload: chunk });
-      await acked;
+      const flushed = this.conn.sendFlushed({ command: A_WRTE, arg0: this.localId, arg1: this.remoteId, payload: chunk });
+      await withTimeout(
+        Promise.all([flushed, acked]),
+        stallMs,
+        () => {
+          this.ackWaiter = undefined;
+          this.close();
+        },
+        new AdbError("TIMEOUT", `The device did not acknowledge data for ${Math.round(stallMs / 1000)} s`),
+      );
     }
   }
 
@@ -156,6 +175,14 @@ export class AdbConnection {
   /** @internal */ send(m: AdbMessage) {
     if (this.closedError) throw this.closedError;
     this.socket.write(encodeMessage(m));
+  }
+
+  /** @internal Like send, but resolves once the socket has taken the bytes (its buffer drained). */
+  sendFlushed(m: AdbMessage): Promise<void> {
+    if (this.closedError) return Promise.reject(this.closedError);
+    return new Promise<void>((resolve, reject) => {
+      this.socket.write(encodeMessage(m), (err) => (err ? reject(new AdbError("CLOSED", err.message)) : resolve()));
+    });
   }
 
   private async readMessage(): Promise<AdbMessage> {

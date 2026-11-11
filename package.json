@@ -1,6 +1,6 @@
 {
   "name": "tethertrace",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Test any Android app on a real phone over Wi-Fi with no adb or Android SDK. Honest failure evidence, YAML flows, and an MCP server for Claude, Codex and local models.",
   "keywords": [
     "android",
