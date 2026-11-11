@@ -1,4 +1,4 @@
-import { chmod, readdir, readFile, rm, stat } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { homeDir } from "../adb/keys.js";
@@ -267,6 +267,18 @@ export async function installCmdlineTools(o: ResolveOptions): Promise<AndroidSdk
   return sdk;
 }
 
+/**
+ * The Android SDK records an accepted license as a file holding the hash of the license text. These
+ * are the published hashes of the "android-sdk-license" (the Android Software Development Kit
+ * License Agreement). Written only after the user agreed to those terms.
+ */
+const ANDROID_SDK_LICENSE_HASHES = ["8933bad161af4178b1185d1a37fbf41ea5269c55", "d56f5187479451eabf01fb78af6dfcb131a6481e", "24333f8a63b6825ea9c5514f83c2829b004d1fee"];
+
+export async function writeSdkLicense(sdkRoot: string): Promise<void> {
+  await mkdir(join(sdkRoot, "licenses"), { recursive: true });
+  await writeFile(join(sdkRoot, "licenses", "android-sdk-license"), ANDROID_SDK_LICENSE_HASHES.map((h) => `\n${h}`).join(""));
+}
+
 /** Accept the SDK licenses (after consent) and install exactly the platform a project compiles against. */
 export async function prepareSdk(sdk: AndroidSdk, jdk: Jdk, compileSdk: number | undefined, o: ResolveOptions): Promise<AndroidSdk> {
   const needLicense = !sdk.licensesAccepted;
@@ -279,12 +291,17 @@ export async function prepareSdk(sdk: AndroidSdk, jdk: Jdk, compileSdk: number |
       throw new ToolchainError("CONSENT", "The Android SDK licenses were not accepted, so SDK packages cannot be downloaded. Re-run with --yes to accept them.");
     const r = await run(sdkmanagerPath(sdk.root), ["--licenses", `--sdk_root=${sdk.root}`], { env, input: "y\n".repeat(40), timeoutMs: 5 * 60_000, signal: o.signal });
     if (r.code !== 0) throw new ToolchainError("DOWNLOAD", `sdkmanager --licenses failed: ${r.output.slice(-600)}`);
+    // On Windows the tool does not always read the piped answers, and it exits 0 without writing
+    // anything. The person has agreed to the terms above, so record that the way the SDK itself does.
+    if (!(await pathExists(join(sdk.root, "licenses", "android-sdk-license")))) await writeSdkLicense(sdk.root);
   }
   if (needPlatform) {
     o.log?.(`Installing Android platform ${compileSdk} (the one this project compiles against)…`);
     const r = await run(sdkmanagerPath(sdk.root), [`--sdk_root=${sdk.root}`, `platforms;android-${compileSdk}`], { env, input: "y\n".repeat(10), timeoutMs: 20 * 60_000, signal: o.signal, onLine: (l) => /\d+%/.test(l) || o.log?.(`  ${l}`) });
     if (r.cancelled) throw new ToolchainError("CANCELLED", "Cancelled");
-    if (r.code !== 0) throw new ToolchainError("DOWNLOAD", `sdkmanager could not install platforms;android-${compileSdk}: ${r.output.slice(-600)}`);
+    // The tool can exit 0 after printing "Package ... not found", so check the result, not the exit code.
+    if (r.code !== 0 || !(await pathExists(join(sdk.root, "platforms", `android-${compileSdk}`))))
+      throw new ToolchainError("DOWNLOAD", `sdkmanager could not install platforms;android-${compileSdk}: ${r.output.split(String.fromCharCode(10)).filter((l) => l.trim()).slice(-6).join(" | ")}`);
   }
   return (await sdkAt(sdk.root, sdk.source))!;
 }

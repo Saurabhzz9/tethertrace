@@ -8,7 +8,7 @@ import { test } from "node:test";
 import {
   detectProjects, inspectGradleAndroid, build, classifyBuildFailure, shouldRetryOverIpv4, findApks, apkSignature, pickArtifact,
   resolveAndroidToolchain, findJdks, pickJdk, parseJavaVersion, parseCmdlineTools, parseLocalProperties, installJdk,
-  download, extractZip, ToolchainError,
+  download, extractZip, quoteForCmd, ToolchainError,
 } from "../dist/index.js";
 import { buildApk, zip } from "./helpers/apk.mjs";
 
@@ -264,6 +264,16 @@ test("download: verifies the checksum, retries network failures, and never keeps
   } finally {
     server.close();
   }
+});
+
+test("arguments for cmd.exe: values with ; or , are quoted so they stay one argument", () => {
+  // Seen on a Windows CI runner: sdkmanager received "platforms" and "android-36" as two packages.
+  assert.equal(quoteForCmd("platforms;android-36"), '"platforms;android-36"');
+  assert.equal(quoteForCmd("a,b"), '"a,b"');
+  assert.equal(quoteForCmd("C:\\Program Files\\x"), '"C:\\Program Files\\x"');
+  assert.equal(quoteForCmd(":app:assembleDebug"), ":app:assembleDebug");
+  assert.equal(quoteForCmd("--sdk_root=D:\\a\\sdk"), "--sdk_root=D:\\a\\sdk");
+  assert.equal(quoteForCmd(""), '""');
 });
 
 test("extractZip: unpacks with a stripped top folder and refuses entries that escape the target", async () => {

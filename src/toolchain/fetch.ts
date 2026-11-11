@@ -170,6 +170,14 @@ export async function extractTarGz(file: string, dest: string, strip = 0, signal
   if (r.code !== 0) throw new ToolchainError("EXTRACT", `tar failed (${r.code}): ${r.output.slice(-400)}`);
 }
 
+/**
+ * Quote one argument for cmd.exe. Besides spaces and the shell operators, cmd splits arguments at
+ * `;` and `,` (and treats parentheses specially), so a value like "platforms;android-36" must be quoted.
+ */
+export function quoteForCmd(a: string): string {
+  return /[\s"&|<>^;,()]/.test(a) || a === "" ? `"${a.replace(/"/g, '\\"')}"` : a;
+}
+
 export interface RunResult {
   code: number | null;
   output: string;
@@ -187,7 +195,7 @@ export function run(
     // .bat/.cmd files can only be started through cmd.exe on Windows.
     const viaShell = process.platform === "win32" && /\.(bat|cmd)$/i.test(cmd);
     const child = viaShell
-      ? spawn(`"${cmd}" ${args.map((a) => (/[\s"&|<>^]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a)).join(" ")}`, { cwd: o.cwd, env: o.env, shell: true, windowsHide: true })
+      ? spawn(`"${cmd}" ${args.map(quoteForCmd).join(" ")}`, { cwd: o.cwd, env: o.env, shell: true, windowsHide: true })
       : spawn(cmd, args, { cwd: o.cwd, env: o.env, windowsHide: true });
     let output = "";
     let pending = "";

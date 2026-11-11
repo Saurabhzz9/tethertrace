@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # main, plus ci/* branches so a maintainer can run CI on a branch without opening a pull request
+    branches: [main, "ci/**"]
   pull_request:
 
 permissions:
@@ -71,8 +72,14 @@ jobs:
           test ! -d "$TETHERTRACE_HOME/toolchains/jdk"
       - name: build with a downloaded toolchain
         run: |
-          node dist/cli.js build examples/android-hello --yes --json > result.json || (cat result.json; tail -n 80 examples/android-hello/build/tethertrace/build.log; exit 1)
-          cat result.json
+          if ! node dist/cli.js build examples/android-hello --yes --json > result.json 2> build.err; then
+            cat build.err result.json || true
+            tail -n 80 examples/android-hello/build/tethertrace/build.log || true
+            # Put the reason on the run summary page, where it can be read without opening the log.
+            node scripts/ci-annotate.mjs result.json build.err
+            exit 1
+          fi
+          cat build.err result.json
           node -e "
             const r = require('./result.json');
             const a = r.artifacts[0];
