@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import YAML from "yaml";
 import { assertPackage, type Device } from "./device.js";
 import { explore, type ExploreSummary } from "./explore.js";
@@ -231,7 +231,7 @@ export async function verify(d: Device, o: VerifyOptions): Promise<VerifySummary
     }
     const f = mine.find((x) => x.file === dec.file)!;
     log(`\nFlow ${f.flow.name}: ${dec.reason}`);
-    const report = join(o.outDir, `flow-${results.length + 1}-${f.flow.name.replace(/[^\w-]/g, "_")}`);
+    const report = join(o.outDir, `flow-${results.length + 1}-${f.flow.name.replace(/[^\w-]/g, "_")}`).split(sep).join("/");
     const before = flowRecord(memory, f.file)?.runs.findLast((r) => r.build !== build.id);
     const s = await runFlow(d, f.flow, { outDir: report, log, beforeAction: o.beforeAction });
     rememberFlowRun(memory, { file: f.file, name: f.flow.name, covers: f.covers, sha256: f.sha256 }, build.id, s, report);
@@ -248,7 +248,7 @@ export async function verify(d: Device, o: VerifyOptions): Promise<VerifySummary
   let exploration: VerifySummary["exploration"];
   const wantExplore = o.explore ?? (o.mode !== "changed" || isNew || memory.explorations.length === 0);
   if (wantExplore) {
-    const report = join(o.outDir, "explore");
+    const report = join(o.outDir, "explore").split(sep).join("/");
     log(`\nExploring ${o.pkg}…`);
     const s = await explore(d, { pkg: o.pkg, outDir: report, maxActions: o.maxActions ?? (o.mode === "changed" ? 25 : 40), timeBudgetMs: o.timeBudgetMs, log });
     const changes = rememberExploration(memory, build.id, s, report);

@@ -97,6 +97,6 @@ export function registerVerifyCommands(program: Command, h: CliHelpers) {
         console.log(`  ${f.name}: ${last ? `${last.status} on ${last.at.slice(0, 10)}${last.failure ? ` (step ${last.failure.step}: ${last.failure.category})` : ""}` : "no runs"}, ${f.runs.length} run${f.runs.length === 1 ? "" : "s"}${f.covers ? `, covers ${f.covers.join(", ")}` : ""}`);
       }
       const e = m.explorations.at(-1);
-      if (e) console.log(`\nLast exploration: ${e.verdict}, coverage ${e.coverage}, ${e.screens} screens (${e.at.slice(0, 10)})`);
+      if (e) console.log(`\nLast exploration: ${e.verdict}, coverage ${e.coverage}, ${e.screens} screen${e.screens === 1 ? "" : "s"} (${e.at.slice(0, 10)})`);
     });
 }
