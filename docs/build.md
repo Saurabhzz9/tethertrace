@@ -115,3 +115,7 @@ A build runs the project's build scripts on your computer, so `build_project` is
 - React Native dependencies are not installed for you, because that runs package scripts and changes the project.
 - Gradle files are read with pattern matching, not by running Gradle. Unusual build scripts (variants created in loops, settings computed at runtime) may show fewer variants than exist; `--variant` still accepts any name Gradle knows.
 - iOS builds are not implemented.
+
+## Ignoring the tools already installed
+
+`TETHERTRACE_MANAGED_ONLY=1` makes tethertrace ignore every JDK and Android SDK on the computer and use only what it downloaded itself. Use it for reproducible builds. CI uses it to build `examples/android-hello` from nothing on Windows, Linux and macOS, so the download path is tested on every change.

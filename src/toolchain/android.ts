@@ -1,4 +1,4 @@
-import { readdir, readFile, rm, stat } from "node:fs/promises";
+import { chmod, readdir, readFile, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { homeDir } from "../adb/keys.js";
@@ -58,6 +58,13 @@ export interface ResolveOptions {
   hermetic?: boolean;
 }
 
+/**
+ * TETHERTRACE_MANAGED_ONLY=1 ignores every JDK and SDK already on the computer and uses only what
+ * tethertrace downloaded. For reproducible builds, and for testing the from-nothing path on a
+ * machine that already has tools.
+ */
+const managedOnly = (env: NodeJS.ProcessEnv) => env.TETHERTRACE_MANAGED_ONLY === "1";
+
 const exe = (n: string) => (process.platform === "win32" ? `${n}.exe` : n);
 
 // ---------------------------------------------------------------- JDK
@@ -94,8 +101,9 @@ export async function findJdks(o: ResolveOptions = {}): Promise<Jdk[]> {
     const j = await jdkAt(home, source);
     if (j && !out.some((x) => x.home === j.home)) out.push(j);
   };
-  await add(env.JAVA_HOME, "JAVA_HOME");
   for (const d of await childDirs(join(toolchainsDir(), "jdk"))) await add(d, "tethertrace (managed)");
+  if (managedOnly(env)) return out;
+  await add(env.JAVA_HOME, "JAVA_HOME");
   for (const dir of o.extraJdkDirs ?? []) for (const d of await childDirs(dir)) await add(d, dir);
   if (o.hermetic) return out;
   const home = homedir();
@@ -189,6 +197,7 @@ export function parseLocalProperties(text: string): Record<string, string> {
 export async function findSdk(gradleRoot: string | undefined, o: ResolveOptions = {}): Promise<AndroidSdk | undefined> {
   const env = o.env ?? process.env;
   const home = homedir();
+  if (managedOnly(env)) return sdkAt(managedSdkDir(), "tethertrace (managed)");
   const candidates: [string | undefined, string][] = [
     [gradleRoot ? parseLocalProperties(await readFile(join(gradleRoot, "local.properties"), "utf8").catch(() => ""))["sdk.dir"] : undefined, "local.properties"],
     [env.ANDROID_HOME, "ANDROID_HOME"],
@@ -250,6 +259,8 @@ export async function installCmdlineTools(o: ResolveOptions): Promise<AndroidSdk
   const dest = join(root, "cmdline-tools", "latest");
   await rm(dest, { recursive: true, force: true });
   await extractZip(archive, dest, 1); // the archive has one top folder, "cmdline-tools"
+  // Make sure the launch scripts can run, whatever permissions the archive recorded.
+  if (process.platform !== "win32") for (const f of await readdir(join(dest, "bin")).catch(() => [])) await chmod(join(dest, "bin", f), 0o755);
   await rm(archive, { force: true });
   const sdk = await sdkAt(root, "tethertrace (managed)");
   if (!sdk?.hasCmdlineTools) throw new ToolchainError("EXTRACT", `The command-line tools did not unpack correctly into ${dest}`);

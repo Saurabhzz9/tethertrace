@@ -275,7 +275,10 @@ export async function build(o: BuildOptions = {}): Promise<BuildResult> {
       const task = `${module.path === ":" ? "" : module.path}:assemble${cap(variant)}`;
       const gradleArgs = [task, "--console=plain", ...(o.offline ? ["--offline"] : [])];
       // `sh gradlew` works even when the executable bit was lost (zip downloads, Windows checkouts).
-      [cmd, args] = process.platform === "win32" ? [wrapper, gradleArgs] : ["sh", [wrapper, ...gradleArgs]];
+      // Older wrapper scripts are bash scripts; newer ones are plain sh. Follow the script.
+      const shebang = (await readFile(wrapper, "utf8").catch(() => "")).split("\n")[0] ?? "";
+      const shell = shebang.startsWith("#!") && shebang.includes("bash") ? "bash" : "sh";
+      [cmd, args] = process.platform === "win32" ? [wrapper, gradleArgs] : [shell, [wrapper, ...gradleArgs]];
       cwd = root;
       outputs = [join(module.dir, "build", "outputs", "apk")];
     }
