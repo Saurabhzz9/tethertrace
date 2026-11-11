@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import YAML from "yaml";
 import { z } from "zod";
@@ -19,6 +19,8 @@ import { explore } from "./explore.js";
 import { Recording, attachRecording, recordWhile } from "./record.js";
 import { runFlow, type Flow } from "./runner.js";
 import { formatNodes, smoke } from "./smoke.js";
+import { listMemories, loadMemory } from "./memory.js";
+import { describeVerify, findFlows, verify } from "./verify.js";
 import { VERSION } from "./version.js";
 
 export interface McpOptions {
@@ -526,6 +528,62 @@ export function createMcpServer(key: AdbKey, o: McpOptions = {}) {
         ),
       );
       return text(`${JSON.stringify(s, null, 2)}\n\nReport: ${join(outDir, "report.html")}`);
+    },
+  );
+
+  tool(
+    "verify_app",
+    {
+      description:
+        'Check the installed build of an app against what tethertrace remembers about it. mode "changed" (default) re-runs only the flows that could be affected (never run, flow file changed, failed last time, or new build and the source the flow covers changed) and explores when the build is new; "full" runs every flow and explores; "discover" only explores, to record the screens. Flows that are not run are reported as not_run, never as passed. A reached screen only shows it opens without a crash.',
+      inputSchema: {
+        package: z.string(),
+        flows: z.array(z.string()).optional().describe("Flow files or folders; default ./flows when it exists"),
+        mode: z.enum(["changed", "full", "discover"]).optional(),
+        projectDir: z.string().optional().describe("Git checkout the build was made from, to see which source changed"),
+        explore: z.boolean().optional().describe("false: never explore"),
+        maxActions: z.number().int().min(1).max(300).optional(),
+      },
+      annotations: act,
+    },
+    { pkg: (a) => a.package, summary: (a) => `verify ${a.package} (${a.mode ?? "changed"})`, detail: (a) => a.mode ?? "changed" },
+    async (a, pkg) => {
+      const where = a.flows ?? ((await stat("flows").then((s) => s.isDirectory(), () => false)) ? ["flows"] : []);
+      const { flows, problems } = await findFlows(where);
+      if (problems.length) throw new Error(`Some flow files could not be read: ${problems.join("; ")}`);
+      const outDir = join(reportsDir, `verify-${pkg}-${stamp()}`);
+      const s = await session.with((d) =>
+        verify(d, {
+          pkg: pkg!,
+          mode: a.mode ?? "changed",
+          flows,
+          outDir,
+          projectDir: a.projectDir ? resolve(a.projectDir) : undefined,
+          explore: a.explore === false ? false : undefined,
+          maxActions: a.maxActions,
+          beforeAction: policy.scoped
+            ? async ({ key: k }) => {
+                if (k) policy.assertKeyInScope("verify_app", k);
+                await inScope("verify_app", d);
+              }
+            : undefined,
+        }),
+      );
+      return text(`${describeVerify(s)}\n\n${JSON.stringify(s, null, 2)}\n\nReport: ${join(outDir, "verify.json")}`);
+    },
+  );
+
+  tool(
+    "app_memory",
+    {
+      description: "What tethertrace remembers about an app from earlier runs: builds seen, screens the explorer reached, and how each flow went on each build. Read-only. Without a package, lists the apps it remembers.",
+      inputSchema: { package: z.string().optional() },
+      annotations: ro,
+    },
+    { pkg: (a) => a.package, detail: (a) => a.package },
+    async (a, pkg) => {
+      if (!pkg) return text(JSON.stringify((await listMemories()).filter((p) => !policy.scope || policy.scope.has(p)), null, 2));
+      return text(JSON.stringify(await loadMemory(pkg), null, 2));
     },
   );
 

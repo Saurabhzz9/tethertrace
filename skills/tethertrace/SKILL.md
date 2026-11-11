@@ -30,6 +30,8 @@ Never guess or reuse a pairing code. Only the user can read it from their phone.
 | "Does my APK work?" with no test written | `tethertrace test app.apk` (installs, explores, catches crashes, writes flows) |
 | Install, cold start and a quick crash check | `tethertrace smoke --apk app.apk` |
 | A repeatable test for a specific path | Write a YAML flow (section 3), then `tethertrace run flow.yaml` |
+| Check a new build without re-running everything | `tethertrace verify` (flows in `./flows`). `--full` runs all, `--discover -p <package>` records the screens the first time |
+| What was seen on earlier runs | `tethertrace memory <package>` |
 | See what is on screen | `tethertrace ui` (elements, `[tap]` = clickable) and `tethertrace screenshot -o screen.png` |
 | Interact by hand | `tethertrace tap "Sign in"`, `tap --id sign_in`, `tap --desc Close`, `type "text"`, `key back`, `scroll down` |
 | The app's logs only | `tethertrace logs com.example.app` |
@@ -48,6 +50,15 @@ Every test command writes a folder under `reports/` with `report.html`, `summary
 - If it reports several projects, modules or variants, pass the folder, `--module` or `--variant` it lists. Do not guess.
 - On failure read `error.category`: `compile_error` is the app's own code (fix the source, the lines are in `error.excerpt`); `jdk_incompatible`, `toolchain_missing` and `license_not_accepted` are setup; `dependency_download_failed` is the network. Do not edit Gradle files to work around a setup problem.
 - iOS projects and Expo projects without an `android/` folder cannot be built yet. Say so.
+
+### Checking a new build
+
+`tethertrace verify` remembers each build, the screens it reached and how each flow went. After a new build it runs the flows that could be affected: never run, flow file changed, failed last time, or the source named in the flow's `covers:` list changed. Rules:
+
+- Report flows marked `not run` as not run. They did not pass on this build.
+- A flow marked REGRESSION passed on the previous build and fails now. Show the failing step and what was on screen. Do not edit the flow to make it pass unless the user confirms the change in the app was intended.
+- "Known screens not reached" does not mean a screen was removed, and a reached screen only shows it opens without a crash.
+- If the installed build may not come from the current checkout, use `--full`.
 
 ## 3. Writing a YAML flow
 
@@ -105,5 +116,6 @@ Report what the evidence shows, nothing more.
 ## More
 
 - Full flow reference: https://github.com/Saurabhzz9/tethertrace/blob/main/docs/flows.md
+- Test memory and verify: https://github.com/Saurabhzz9/tethertrace/blob/main/docs/verify.md
 - MCP setup for every client: https://github.com/Saurabhzz9/tethertrace/blob/main/docs/mcp.md
 - Troubleshooting: https://github.com/Saurabhzz9/tethertrace/blob/main/docs/troubleshooting.md
