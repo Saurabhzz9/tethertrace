@@ -60,7 +60,7 @@ async function phone(opts = {}) {
 const denied = (r, re) => { assert.equal(r.isError, true, JSON.stringify(r.content)); assert.match(r.content[0].text, re); };
 
 test("every registered tool has a permission class, and nothing else is registered", async () => {
-  const p = await phone({ allowShell: true });
+  const p = await phone({ allowShell: true, allowBuild: true });
   try {
     const names = (await p.client.listTools()).tools.map((t) => t.name).sort();
     assert.deepEqual(names, Object.keys(TOOL_CLASSES).sort());
@@ -268,4 +268,33 @@ test("the policy is platform-neutral: any adapter that can say what is in front 
   await assert.rejects(policy.assertInScope("tap", { focusedPackage: async () => "com.example.Notes" }, { x: 1, y: 1 }), /could not tell which app owns/);
   assert.throws(() => parseClasses("interact,root", "--confirm"), /unknown permission class "root"/);
   assert.deepEqual(parseClasses("install, execute", "--confirm"), ["install", "execute"]);
+});
+
+test("execute is granted per tool: --allow-build does not open the shell, and the reverse", async () => {
+  const b = await phone({ allowBuild: true });
+  try {
+    const names = (await b.client.listTools()).tools.map((t) => t.name);
+    assert.ok(names.includes("build_project") && !names.includes("shell"));
+  } finally { await b.close(); }
+  const s = await phone({ allowShell: true });
+  try {
+    const names = (await s.client.listTools()).tools.map((t) => t.name);
+    assert.ok(names.includes("shell") && !names.includes("build_project"));
+  } finally { await s.close(); }
+  await assert.rejects(new Policy({ allowBuild: true, auditFile: false }).authorize({ tool: "shell" }), /--allow-shell/);
+  await assert.rejects(new Policy({ allowShell: true, auditFile: false }).authorize({ tool: "build_project" }), /--allow-build/);
+  await assert.rejects(new Policy({ allowBuild: true, readOnly: true, auditFile: false }).authorize({ tool: "build_project" }), /read-only/);
+  await new Policy({ allowBuild: true, packages: [APP], auditFile: false }).authorize({ tool: "build_project" });
+});
+
+test("build_project reports a failure as an error and never builds something it cannot identify", async () => {
+  const p = await phone({ allowBuild: true });
+  try {
+    const r = await p.call("build_project", { dir: p.dir });
+    assert.equal(r.isError, true);
+    assert.equal(JSON.parse(r.content[0].text).error.category, "no_project");
+    const seen = JSON.parse((await p.call("inspect_project", { dir: p.dir })).content[0].text);
+    assert.deepEqual(seen, []);
+    assert.ok((await p.audit()).some((e) => e.tool === "build_project" && e.decision === "allowed" && e.classes.includes("execute")));
+  } finally { await p.close(); }
 });

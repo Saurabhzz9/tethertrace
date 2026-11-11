@@ -11,6 +11,7 @@ import { Device, SelectorError, type Selector } from "./device.js";
 import { explainLocally, explainWithModel, loadReport } from "./explain.js";
 import { explore } from "./explore.js";
 import { startMcpServer } from "./mcp.js";
+import { registerBuildCommands } from "./cli-build.js";
 import { approve, listApprovals, parseClasses } from "./policy.js";
 import { loadFlow, runFlow } from "./runner.js";
 import { formatNodes, smoke } from "./smoke.js";
@@ -402,6 +403,8 @@ program
     });
   });
 
+registerBuildCommands(program, { withDevice, stamp, deviceOpt });
+
 // ---------------------------------------------------------------- AI agents
 
 program
@@ -410,19 +413,23 @@ program
   .addOption(deviceOpt())
   .option("--read-only", "only expose tools that look (no tap/type/install/launch/shell); wins over --allow-shell")
   .option("--allow-shell", "also expose a raw shell tool (never with --read-only or --package)")
+  .option("--allow-build", "also expose build_project, which runs the build of a project (Gradle, Flutter) on this computer")
+  .option("--allow-downloads", "let build_project fetch a missing JDK / Android SDK and accept the Android SDK licenses")
   .option("--package <name...>", "restrict everything to these apps: tools refuse to read or touch the screen while another app is in front")
   .option("--reports <dir>", "where reports are written", "reports")
   .option("--confirm <classes>", "ask a person before each call of these kinds: interact, install, execute, sensitive (comma-separated)")
   .option("--preauthorize <classes>", "approve these kinds in advance for an unattended session (overrides --confirm)")
   .option("--no-audit", "do not write the local audit log (~/.tethertrace/audit.jsonl)")
   .addHelpText("after", "\nClaude Code:  claude mcp add tethertrace -- tethertrace mcp\nCodex:        add [mcp_servers.tethertrace] with command = \"tethertrace\", args = [\"mcp\"] to ~/.codex/config.toml\nOther clients (Gemini CLI, Cursor, VS Code, Claude Desktop, local models): docs/mcp.md")
-  .action(async (o: { device?: string; readOnly?: boolean; allowShell?: boolean; package?: string[]; reports: string; confirm?: string; preauthorize?: string; audit: boolean }) => {
+  .action(async (o: { device?: string; readOnly?: boolean; allowShell?: boolean; package?: string[]; reports: string; confirm?: string; preauthorize?: string; audit: boolean; allowBuild?: boolean; allowDownloads?: boolean }) => {
     if (o.readOnly && o.allowShell) console.error("tethertrace: --read-only wins over --allow-shell; the shell tool stays off.");
     if (o.package?.length && o.allowShell) console.error("tethertrace: shell cannot be limited to one app; it stays off while --package is set.");
     await startMcpServer({
       device: o.device,
       readOnly: o.readOnly,
       allowShell: o.allowShell,
+      allowBuild: o.allowBuild,
+      allowDownloads: o.allowDownloads,
       packages: o.package,
       reportsDir: o.reports,
       confirm: parseClasses(o.confirm, "--confirm"),

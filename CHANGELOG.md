@@ -6,6 +6,11 @@ All notable changes are listed here. The project follows [Semantic Versioning](h
 
 ### Added
 
+- `tethertrace build`: builds the app in a folder with its own build system (Gradle wrapper, Flutter, React Native's Gradle project) and returns the APKs with package name and signature state, or a categorized failure. `--install` and `--test` continue onto the phone.
+- Managed Android toolchain: finds a JDK and Android SDK that fit the project (from `local.properties`, the environment and the usual install folders), and with your approval downloads a Temurin JDK and Google's SDK command-line tools, accepts the SDK licenses and installs the one platform the project compiles against. Checksums are verified; everything lives in `~/.tethertrace/toolchains`. `tethertrace toolchain list|clean` manages it.
+- `tethertrace doctor` and `tethertrace devices`: what is in a folder, what a build would use, what is missing, and which phones are reachable.
+- Project detection for native Android (Groovy and Kotlin DSL, version catalogs, several app modules, flavors), Flutter, React Native, Expo, SwiftPM/xtool and Xcode projects, and prebuilt APK/IPA files, including in monorepos. iOS projects are detected and reported as not buildable yet.
+- MCP tools `inspect_project`, `toolchain_status` (read) and `build_project` (execute, only with `--allow-build`; downloads only with `--allow-downloads`).
 - Agent skill `skills/tethertrace/SKILL.md` for Claude Code, Codex and other agents that read SKILL.md: when to use tethertrace, which command fits, how to write flows from real labels, how to read verdicts and coverage, and safety rules. Included in the npm package.
 - MCP prompt `write_test`: asks the connected model to inspect the app (and its source), write a YAML flow for a goal, run it and fix it until it passes.
 - README screenshots from real runs, and a section on letting an AI write flows for your app.

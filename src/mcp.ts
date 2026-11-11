@@ -11,7 +11,10 @@ import { discover, SERVICE_CONNECT, SERVICE_PAIRING } from "./adb/mdns.js";
 import { pair } from "./adb/pairing.js";
 import { assertPackage, Device, SelectorError, type Selector } from "./device.js";
 import { fileApprover, Policy, PolicyError, TOOL_CLASSES, type Approver, type PermissionClass } from "./policy.js";
+import { build } from "./build.js";
 import { explainLocally, loadReport } from "./explain.js";
+import { detectProjects } from "./project/detect.js";
+import { resolveAndroidToolchain } from "./toolchain/android.js";
 import { explore } from "./explore.js";
 import { Recording, attachRecording, recordWhile } from "./record.js";
 import { runFlow, type Flow } from "./runner.js";
@@ -25,6 +28,10 @@ export interface McpOptions {
   readOnly?: boolean;
   /** Expose a raw `shell` tool. Off by default. */
   allowShell?: boolean;
+  /** Expose `build_project`, which runs a project build (Gradle, Flutter) on this computer. Off by default. */
+  allowBuild?: boolean;
+  /** Let `build_project` download a missing JDK / Android SDK and accept the SDK licenses. Off by default. */
+  allowDownloads?: boolean;
   /** Restrict app-level tools to these packages. */
   packages?: string[];
   reportsDir?: string;
@@ -147,7 +154,7 @@ export function createMcpServer(key: AdbKey, o: McpOptions = {}) {
       }
       return files(req);
     });
-  const policy = new Policy({ readOnly: o.readOnly, allowShell: o.allowShell, packages: o.packages, pinnedDevice: o.device, confirm: o.confirm, preauthorize: o.preauthorize, auditFile: o.auditFile, approver });
+  const policy = new Policy({ readOnly: o.readOnly, allowShell: o.allowShell, allowBuild: o.allowBuild, packages: o.packages, pinnedDevice: o.device, confirm: o.confirm, preauthorize: o.preauthorize, auditFile: o.auditFile, approver });
 
   // MCP annotations are hints for clients only. Authorization happens in `policy`, below.
   const ro = { readOnlyHint: true, openWorldHint: false };
@@ -176,9 +183,7 @@ export function createMcpServer(key: AdbKey, o: McpOptions = {}) {
   ) {
     const classes = TOOL_CLASSES[name];
     if (!classes) throw new Error(`Tool ${name} has no permission class in TOOL_CLASSES`);
-    if (!classes.every((c) => policy.grants(c))) return;
-    // Shell cannot be confined to one app, so it is not offered in a package-scoped session.
-    if (classes.includes("execute") && policy.scoped) return;
+    if (policy.unavailable(name)) return;
     const run = async (a: z.infer<z.ZodObject<S>>): Promise<Result> => {
       try {
         const pkg = await gate.pkg?.(a);
@@ -531,6 +536,64 @@ export function createMcpServer(key: AdbKey, o: McpOptions = {}) {
     async ({ command }) => {
       const r = await session.with((d) => d.shell(command));
       return text(`exit ${r.exitCode}\n${r.text}${r.stderr.length ? `\nstderr:\n${r.stderr.toString("utf8")}` : ""}`.slice(0, 60_000));
+    },
+  );
+
+  tool(
+    "inspect_project",
+    {
+      description: "Find the app projects in a folder (native Android, Flutter, React Native, SwiftPM/Xcode iOS, prebuilt APK/IPA) and say how each is built, its modules, variants and whether it can be built on this computer. Read-only.",
+      inputSchema: { dir: z.string().optional().describe("Folder to look in; default is the working directory of the server") },
+      annotations: ro,
+    },
+    { detail: (a) => a.dir },
+    async ({ dir }) => text(JSON.stringify(await detectProjects(resolve(dir ?? ".")), null, 2)),
+  );
+
+  tool(
+    "toolchain_status",
+    { description: "For the Android project in a folder: which JDK and Android SDK a build would use, and exactly what is missing. Read-only; downloads nothing.", inputSchema: { dir: z.string().optional() }, annotations: ro },
+    { detail: (a) => a.dir },
+    async ({ dir }) => {
+      const projects = (await detectProjects(resolve(dir ?? "."))).filter((p) => p.android && p.build.supported === "local");
+      if (!projects.length) return text("No buildable Android project found here. Use inspect_project to see what is in the folder.");
+      const out = [];
+      for (const p of projects) {
+        const tc = await resolveAndroidToolchain(p.android!);
+        out.push({ project: p.root, kind: p.kind, jdk: tc.jdk, sdk: tc.sdk, missing: tc.missing, ready: tc.missing.length === 0 });
+      }
+      return text(JSON.stringify(out, null, 2));
+    },
+  );
+
+  tool(
+    "build_project",
+    {
+      description:
+        "Build the app in a folder with its own build system (Gradle wrapper, or Flutter) and return the APKs it produced, or a categorized failure with the lines that matter. Enabled with --allow-build, because it runs the build scripts of the project on this computer. Then use install_apk or explore_app with the returned path.",
+      inputSchema: {
+        dir: z.string().optional(),
+        module: z.string().optional().describe('Gradle app module such as ":app", when there are several'),
+        variant: z.string().optional().describe("debug (default), release, or a flavor variant"),
+        offline: z.boolean().optional(),
+        timeoutMinutes: z.number().min(1).max(120).optional(),
+      },
+      annotations: { ...act, openWorldHint: true },
+    },
+    { summary: (a) => `build the project in ${resolve(a.dir ?? ".")} (runs its build scripts on this computer)`, detail: (a) => resolve(a.dir ?? ".") },
+    async (a) => {
+      const r = await build({
+        dir: a.dir,
+        platform: "android",
+        module: a.module,
+        variant: a.variant,
+        offline: a.offline,
+        timeoutMs: (a.timeoutMinutes ?? 30) * 60_000,
+        // Downloads and license acceptance are decided by whoever started the server, never by the agent.
+        install: o.allowDownloads === true,
+        consent: async () => o.allowDownloads === true,
+      });
+      return { content: [{ type: "text" as const, text: JSON.stringify(r, null, 2) }], isError: !r.ok };
     },
   );
 

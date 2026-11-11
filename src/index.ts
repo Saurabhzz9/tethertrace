@@ -18,3 +18,7 @@ export { VERSION } from "./version.js";
 export { explore, coverage, screenSignature, DEFAULT_DENY, WINDOW_MODE_DENY, type ExploreSummary, type ExploreOptions, type ExploreCoverage } from "./explore.js";
 export { Recording, attachRecording, nativeRecorderWorks, type RecordingOptions, type RecordingResult } from "./record.js";
 export { Policy, PolicyError, TOOL_CLASSES, PERMISSION_CLASSES, parseClasses, fileApprover, approve, listApprovals, type PermissionClass, type PolicyOptions, type Approver, type ApprovalRequest, type ScopeProbe, type AuditEntry } from "./policy.js";
+export { detectProjects, describeProject, inspectGradleAndroid, ADAPTERS, ADAPTER_API_VERSION, type DetectedProject, type ProjectAdapter, type AndroidProjectInfo, type AndroidModule, type ProjectKind, type Platform } from "./project/detect.js";
+export { build, selectProject, classifyBuildFailure, apkSignature, pickArtifact, BuildError, type BuildOptions, type BuildResult, type BuildArtifact, type BuildErrorCategory } from "./build.js";
+export { resolveAndroidToolchain, findJdks, pickJdk, findSdk, parseJavaVersion, parseCmdlineTools, parseLocalProperties, installJdk, installCmdlineTools, listManaged, cleanManaged, toolchainsDir, type AndroidToolchain, type Jdk, type AndroidSdk, type Consent } from "./toolchain/android.js";
+export { download, extractZip, freeBytes, ToolchainError } from "./toolchain/fetch.js";
