@@ -2,7 +2,18 @@
 
 All notable changes are listed here. The project follows [Semantic Versioning](https://semver.org).
 
-## Unreleased
+## 0.1.1 - 2026-11-11
+
+### Fixed
+
+- An install on a link that stopped moving hung forever: there was no timeout while the APK was being sent. A write now fails after 30 seconds without progress, and the error says how much was sent (`Install stalled after 37.0 of 150.0 MB`).
+- The APK was read into memory whole before it was sent. It is now read and sent one chunk at a time, and each chunk waits for both the socket and the phone's acknowledgement. Installing an 82 MB APK on a real phone peaked at 112 MB of memory instead of 352 MB.
+
+### Added
+
+- `tethertrace install` shows progress for APKs over 20 MB. `Device.install` takes `onProgress` and `stallTimeoutMs`.
+
+## 0.1.0 - 2026-11-11
 
 ### Added
 

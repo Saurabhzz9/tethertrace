@@ -1,5 +1,5 @@
-import { readFile, stat } from "node:fs/promises";
-import { AdbConnection, AdbError, withTimeout, type ConnectOptions } from "./adb/connection.js";
+import { open } from "node:fs/promises";
+import { AdbConnection, AdbError, withTimeout, type AdbStream, type ConnectOptions } from "./adb/connection.js";
 import { downscalePng, rawScreencapToPng } from "./image.js";
 
 /** High-level device operations built on the raw ADB connection. */
@@ -190,11 +190,37 @@ export class Device {
   }
 
   /** Stream an APK to `cmd package install` — no temp file on the phone. */
-  async install(apkPath: string) {
-    const size = (await stat(apkPath)).size;
-    const data = await readFile(apkPath);
-    const s = await this.adb.open(`exec:cmd package install -r -S ${size}`);
-    await s.write(data);
+  /**
+   * Install an APK. The file is read and sent one chunk at a time (never loaded whole), and each
+   * chunk waits for the phone before the next, so memory stays flat for any APK size. If the link
+   * stops moving for `stallTimeoutMs` the install fails with how far it got, instead of hanging.
+   */
+  async install(apkPath: string, opts: { onProgress?: (sentBytes: number, totalBytes: number) => void; stallTimeoutMs?: number } = {}) {
+    const fh = await open(apkPath, "r");
+    let s: AdbStream | undefined;
+    let sent = 0;
+    let size = 0;
+    try {
+      size = (await fh.stat()).size;
+      s = await this.adb.open(`exec:cmd package install -r -S ${size}`);
+      const buf = Buffer.allocUnsafe(Math.min(this.adb.maxPayload, Math.max(size, 1)));
+      while (sent < size) {
+        const { bytesRead } = await fh.read(buf, 0, Math.min(buf.length, size - sent), sent);
+        if (!bytesRead) throw new AdbError("PROTOCOL", `${apkPath} changed while it was being sent`);
+        // The chunk is reused for the next read only after this write has been flushed and acknowledged.
+        await s.write(buf.subarray(0, bytesRead), { stallTimeoutMs: opts.stallTimeoutMs });
+        sent += bytesRead;
+        opts.onProgress?.(sent, size);
+      }
+    } catch (e) {
+      s?.close();
+      const mb = (n: number) => (n / 1e6).toFixed(1);
+      if (e instanceof AdbError && e.code === "TIMEOUT" && s)
+        throw new AdbError("TIMEOUT", `Install stalled after ${mb(sent)} of ${mb(size)} MB: ${e.message.replace(/^The device/, "the phone")}. The Wi-Fi link is probably dropping; move closer to the router and try again.`);
+      throw e;
+    } finally {
+      await fh.close();
+    }
     const out = (await withTimeout(s.readAll(), 180_000, () => s.close(), new AdbError("TIMEOUT", "Install timed out"))).toString("utf8").trim();
     if (!/^Success/m.test(out)) throw new AdbError("PROTOCOL", `Install failed: ${out.slice(0, 300)}`);
     return out;

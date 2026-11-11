@@ -72,7 +72,11 @@ export async function startPairingServer({ code, guid = "adb-MOCK1234-abcdef" })
  * Fake adbd. mode "tls": answers CNXN with STLS and requires a client cert whose key is trusted.
  * mode "auth": classic RSA token auth; unknown keys are accepted via AUTH RSAPUBLICKEY if acceptNewKeys.
  */
-export async function startAdbd({ mode = "tls", trusted = [], trustAny = false, acceptNewKeys = true, banner, handler } = {}) {
+/**
+ * `upload` shapes how an install is received: `stallAfter` stops acknowledging once that many bytes
+ * arrived (a link that went dead), `ackDelayMs` delays every acknowledgement (a slow link).
+ */
+export async function startAdbd({ mode = "tls", trusted = [], trustAny = false, acceptNewKeys = true, banner, handler, upload = {} } = {}) {
   const deviceKey = AdbKey.generate("mock@device");
   const trustedMods = new Set(trusted.map((s) => modOf(publicKeyFromAndroidString(s))));
   const log = [];
@@ -166,8 +170,12 @@ export async function startAdbd({ mode = "tls", trusted = [], trustAny = false, 
       const m = await read();
       if (m.command === P.A_WRTE && uploads.has(m.arg1)) {
         const u = uploads.get(m.arg1);
-        send(P.A_OKAY, m.arg1, u.remote);
         u.got += m.payload.length;
+        u.chunks++;
+        log.push({ uploadChunk: m.payload.length });
+        if (upload.stallAfter !== undefined && u.got > upload.stallAfter) continue; // never acknowledged
+        if (upload.ackDelayMs) await new Promise((r) => setTimeout(r, upload.ackDelayMs));
+        send(P.A_OKAY, m.arg1, u.remote);
         if (u.got >= u.expect) {
           uploads.delete(m.arg1);
           send(P.A_WRTE, m.arg1, u.remote, Buffer.from("Success\n"));
@@ -186,7 +194,7 @@ export async function startAdbd({ mode = "tls", trusted = [], trustAny = false, 
         send(P.A_OKAY, local, remote);
         const install = /^cmd package install .*-S (\d+)/.exec(exec[1]);
         if (install) {
-          uploads.set(local, { remote, expect: Number(install[1]), got: 0 });
+          uploads.set(local, { remote, expect: Number(install[1]), got: 0, chunks: 0 });
           continue;
         }
         const data = Buffer.from((handler && handler(exec[1], "exec")) ?? "");
