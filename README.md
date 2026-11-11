@@ -2,13 +2,15 @@
 
 # tethertrace
 
-**Give it your APK. It tests your app on your real phone over Wi-Fi.**<br>
-No `adb`. No Android SDK. No test code. No cloud. Works with Claude, Codex and local models.
+**Build, install and test your Android app on your real phone over Wi-Fi.**<br>
+No `adb`. No Android SDK. No Android Studio. No test code. No cloud. Works with Claude, Codex and local models.
 
+[![npm](https://img.shields.io/npm/v/tethertrace?color=cb3837&label=npm)](https://www.npmjs.com/package/tethertrace)
 [![CI](https://github.com/Saurabhzz9/tethertrace/actions/workflows/ci.yml/badge.svg)](https://github.com/Saurabhzz9/tethertrace/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Node 22+](https://img.shields.io/badge/node-%E2%89%A522-339933)
-![Status: early](https://img.shields.io/badge/status-0.1%20early-orange)
+
+[Quick start](#quick-start) · [Test an APK](#building-an-android-app-just-give-it-your-apk) · [Build from source](#no-apk-yet-build-it-too) · [Verify a new build](#check-a-new-build-without-re-running-everything) · [AI agents](#use-it-from-claude-codex-and-other-ai-tools) · [Status](#status) · [Help wanted](#help-wanted)
 
 </div>
 
@@ -18,10 +20,17 @@ No `adb`. No Android SDK. No test code. No cloud. Works with Claude, Codex and l
 </p>
 
 ```bash
-npm install -g tethertrace
-tethertrace pair 123456          # once, with the code from Wireless debugging
-tethertrace test app-release.apk # install, explore, catch crashes. No test code.
+npx tethertrace pair 123456          # once, with the code from Wireless debugging
+npx tethertrace test app-release.apk # install, explore, catch crashes. No test code.
 ```
+
+| You want to | Run |
+|---|---|
+| Know if an APK crashes, with no test written | `tethertrace test app.apk` |
+| Build the project in this folder and test it on your phone | `tethertrace build --test` |
+| Check only what a new build could have broken | `tethertrace verify` |
+| Run an exact path every time | `tethertrace run login.yaml` |
+| Let Claude, Codex or a local model drive the phone | `tethertrace mcp` |
 
 ## Building an Android app? Just give it your APK
 
@@ -47,7 +56,9 @@ tethertrace doctor          # what is in this folder, and what a build needs
 tethertrace build --test    # build, install on your phone, explore for crashes
 ```
 
-`build` runs your project's own build (the Gradle wrapper, or `flutter build apk`) and works out the JDK and Android SDK it needs. It uses what is already on your computer. If something is missing, it asks before downloading the smallest set that can compile an app (a JDK, Google's SDK command-line tools and the one platform your project targets), verifies the checksums, and keeps it in `~/.tethertrace`. You do not need Android Studio, and you do not set `JAVA_HOME` or `ANDROID_HOME`.
+`build` runs your project's own build (the Gradle wrapper, or `flutter build apk`) and works out the JDK and Android SDK it needs. It uses what is already on your computer. If something is missing, it asks before downloading the smallest set that can compile an app (a Temurin JDK and the one Android platform your project compiles against, straight from Google's SDK index), verifies the checksums, and keeps it in `~/.tethertrace`. You do not need Android Studio or `sdkmanager`, and you do not set `JAVA_HOME` or `ANDROID_HOME`.
+
+It reads native Android projects (Groovy and Kotlin DSL, version catalogs, several modules, flavors) and Flutter projects. CI builds an example app this way on Windows, Linux and macOS starting from an empty machine, on every change.
 
 A failed build comes back with a category (`compile_error`, `jdk_incompatible`, `dependency_download_failed`, …) and the lines that matter. Details and limits: **[docs/build.md](docs/build.md)**.
 
@@ -55,6 +66,7 @@ A failed build comes back with a category (`compile_error`, `jdk_incompatible`, 
 
 - **Nothing to install but Node.** tethertrace speaks the ADB wire protocol itself in TypeScript: wireless pairing (TLS 1.3 + SPAKE2), the encrypted connection, shell, install, screenshots. No `adb.exe`, no 150 MB platform-tools, no USB drivers.
 - **Any app.** Point it at an APK or a package name; it reads the package straight from the APK.
+- **From source to a tested build in one command.** `build --test` finds the right JDK and SDK, builds, installs and explores. `verify` then remembers the app and re-runs only what a new build could affect.
 - **Honest answers when something breaks.** Every failure is labelled (`element_not_found`, `app_crash`, `anr`, `app_exited`, `device_disconnected`, …) and comes with the screenshot, what *was* on screen, and only your app's logs. "No crash observed" is never sold as "everything works".
 - **Built for AI agents.** An MCP server lets Claude Code, Codex, Gemini CLI, Cursor or any MCP client see the screen, tap, type, install and run tests on the phone in your hand. AI is optional: the CLI is fully deterministic without it.
 
@@ -106,7 +118,7 @@ Then ask: *"Install app-release.apk on my phone, open the login screen, try sign
 
 <p align="center"><img src="docs/assets/mcp.png" alt="An AI agent's tool calls driving the phone, and the screenshot it received" width="900"></p>
 
-The agent gets these tools: `discover_devices`, `pair_device`, `select_device`, `device_info`, `list_apps`, `apk_info`, `screenshot`, `ui_tree`, `wait_for`, `tap`, `type_text`, `press_key`, `scroll`, `swipe`, `launch_app`, `stop_app`, `install_apk`, `app_logs`, `smoke_test`, `explore_app`, `run_flow`, `verify_app`, `app_memory`, `record_screen`, `explain_report`. Tests can record the screen with `record: true`.
+The agent gets these tools: `discover_devices`, `pair_device`, `select_device`, `device_info`, `list_apps`, `apk_info`, `screenshot`, `ui_tree`, `wait_for`, `tap`, `type_text`, `press_key`, `scroll`, `swipe`, `launch_app`, `stop_app`, `install_apk`, `app_logs`, `smoke_test`, `explore_app`, `run_flow`, `verify_app`, `app_memory`, `record_screen`, `explain_report`, `inspect_project`, `toolchain_status`, and `build_project` when you start it with `--allow-build`. Tests can record the screen with `record: true`.
 
 Safety is enforced by the server, not left to the client:
 
@@ -115,6 +127,8 @@ Safety is enforced by the server, not left to the client:
 - `--allow-shell`: raw shell is off unless you add this.
 - `--confirm install,execute`: a person approves each such call.
 - Every decision goes to a local audit log.
+
+Every tool has a permission class (`read`, `interact`, `install`, `execute`, `sensitive`) and every call passes one policy on the server before it reaches the phone. A ready catalog entry for [HOL Guard](https://github.com/hashgraph-online/hol-guard) is in [`integrations/hol-guard`](integrations/hol-guard/README.md).
 
 Details: [docs/mcp.md](docs/mcp.md#security-model).
 
@@ -173,6 +187,32 @@ Flows are plain YAML written for *your* app: its screens, its labels, its ids. Y
 
 Keep your app's flows in your app's repo and run them on every build.
 
+## Check a new build without re-running everything
+
+```bash
+tethertrace verify --discover -p com.example.app   # first time: record the app's screens
+tethertrace verify                                 # after a new build: check what could be affected
+tethertrace verify --full                          # everything
+```
+
+tethertrace remembers each app in a plain JSON file you can read and edit: the builds it has seen, the screens the explorer reached, and how each flow went on each build. After a new build, `verify` runs a flow when it was never run, its file changed, it failed last time, or the source it covers changed in git:
+
+```yaml
+app: com.example.app
+name: login
+covers: [app/src/main/java/com/example/login/**]   # re-run only when this source changes
+steps:
+  - launch
+  - tap: "Sign in"
+```
+
+- A flow that is skipped is reported as **not run**. It is never counted as passed.
+- A flow that passed on the previous build and fails now is reported as a **regression**.
+- Anything it cannot decide, it runs. Flows are never rewritten for you.
+- No AI is involved, so the same inputs pick the same flows every time.
+
+Details: **[docs/verify.md](docs/verify.md)**.
+
 ## Ask an AI why it failed (optional)
 
 ```bash
@@ -219,11 +259,13 @@ Or skip the code and give an agent the MCP server (above): it gets the same powe
 
 | Command | What it does |
 |---|---|
-| `discover` | Find phones with Wireless debugging on this network |
+| `doctor [dir]` | What is in this folder, what a build needs, what is missing |
+| `discover` · `devices` | Find phones with Wireless debugging on this network |
 | `pair [host:port] <code>` | Pair once with the 6-digit code |
 | `info` | Model, Android version, ABI |
 | `apps` · `apk-info <apk>` | Installed apps · package/version of an APK |
-| `install <apk>` · `launch <pkg>` · `stop <pkg>` | Install over Wi-Fi · cold start with launch time · force-stop |
+| `build` · `toolchain list` · `toolchain clean` | Build the project (`--install`, `--test`, `--json`) · show or delete what tethertrace downloaded |
+| `install <apk>` · `launch <pkg>` · `stop <pkg>` | Install over Wi-Fi (streamed, with progress for large APKs) · cold start with launch time · force-stop |
 | `screenshot` · `ui` · `logs <pkg>` | Screen PNG · on-screen elements · one app's logcat |
 | `record` · `--record` | Record the screen on its own, or during `run`, `test` and `smoke` (saved in the report) |
 | `tap` · `type` · `key` · `scroll` | Interact by visible text, id or description |
@@ -232,7 +274,7 @@ Or skip the code and give an agent the MCP server (above): it gets the same powe
 | `run <flow.yaml>` | Run a YAML test with a full report |
 | `verify` · `memory` | After a new build, re-run only the flows that could be affected and report regressions · show what is remembered about an app ([docs/verify.md](docs/verify.md)) |
 | `explain <report>` | Summarise a report, optionally with an AI model |
-| `mcp` | MCP server for AI agents |
+| `mcp` · `approve [id]` | MCP server for AI agents · approve an action an agent asked for (with `mcp --confirm`) |
 | `shell <cmd>` | Run a shell command on the phone |
 
 ## How it works
@@ -253,7 +295,7 @@ Details, including how compatibility with Google's `adb` was checked: **[docs/ho
 
 ## Status
 
-Version 0.1, early. What has been verified, and where:
+Version 0.1, early, and published on [npm](https://www.npmjs.com/package/tethertrace). What has been verified, and where:
 
 | Area | Verified |
 |---|---|
@@ -263,16 +305,25 @@ Version 0.1, early. What has been verified, and where:
 | Wire compatibility | Google's `adb` 1.0.41 pairs, connects and runs shell against tethertrace's protocol implementation (test harness) |
 | Zero-config `test` explorer | On that phone against a Flutter app: 10–15 screens per run, no crash, share buttons and 5 settings toggles correctly skipped; plus mock tests for crash + repro and replaying the generated flow |
 | Screen recording | On that phone, whose built-in `screenrecord` crashes: tethertrace fell back to screenshot frames (~4–6 fps) and produced the video at the top of this page |
-| Everything | 40 automated tests against a mock device |
-| Not yet verified | Other phone brands and Android versions, macOS/Linux with a real phone, each AI client's own setup (the MCP protocol itself is tested), iOS (not supported) |
+| Building from source | `build --test` on that phone with a native Android app and a Flutter app. In CI on Windows, Linux and macOS: a build from an empty machine (JDK and SDK platform downloaded, licenses recorded, signed APK, offline rebuild) |
+| `verify` and test memory | On that phone: first run, same build skipped, reinstall seen as a new build, a `covers` path changed in git, a failing flow |
+| Security policy | 21 package-scope cases on that phone (other app in front, status bar, raw coordinates, system keys), plus negative tests for every permission class |
+| Large installs | An 82 MB APK on that phone: streamed, peak memory 112 MB. A link that goes dead is simulated in tests and fails after 30 s instead of hanging |
+| Everything | 97 automated tests against a mock device, on Windows, Linux and macOS, Node 22 and 24 |
+| Not yet verified | Other phone brands and Android versions, macOS/Linux with a real phone, React Native builds (the project is detected, the build has not been run), real packet loss on a bad network, APKs over about 100 MB, each AI client's own setup (the MCP protocol itself is tested), iOS (not supported) |
 
 If you try it on another phone, please [tell us how it went](https://github.com/Saurabhzz9/tethertrace/discussions). That is the most useful contribution right now.
 
 ## Limitations
 
-- Android only. iPhones use a different protocol (on the roadmap).
-- `type` sends ASCII only (an Android `input text` limitation).
-- Elements are found through the accessibility tree: text in custom-drawn canvases, games and secure screens (banking, passwords) is invisible to it.
+- Android only. iOS projects are detected but cannot be built or driven yet.
+- Real phones only. It does not start or manage emulators.
+- `type` sends ASCII only (an Android `input text` limitation), so Hindi and other non-Latin text cannot be typed.
+- Elements are found through the accessibility tree: text in custom-drawn canvases, games and secure screens (banking, passwords) is invisible to it. The explorer says so with coverage `none`.
+- `verify` does not trace code dependencies. `covers:` is written by hand, so a flow that depends on a shared utility has to list that path too. When unsure, use `--full`.
+- Discovery needs mDNS. On a network that blocks it, pass `--device host:port`. A Wi-Fi that isolates clients from each other cannot be worked around (stock `adb` fails there too).
+- `build` does not download the Flutter SDK or install a React Native project's Node dependencies.
+- Gradle files are read by pattern matching, not by running Gradle, so unusual build scripts may show fewer variants than exist.
 - Some phones switch Wireless debugging off when the screen locks or Wi-Fi changes. Turn it on again; pairing is remembered.
 
 ## Security and privacy
@@ -284,10 +335,23 @@ If you try it on another phone, please [tell us how it went](https://github.com/
 
 ## Roadmap
 
-- Run the same flow on several phones in parallel
-- Record a flow by using the app
-- Portable, redacted repro bundles (`.zip`) you can attach to an issue
-- iOS (logs, screenshots, install) without a Mac
+Next, in this order:
+
+1. `verify`: trace dependencies, or a list of shared paths that makes every flow run
+2. Clearer errors and a remembered address when mDNS is blocked
+3. More phones verified
+4. React Native builds verified
+5. Typing non-Latin text
+6. iOS: building with [xtool](https://github.com/xtool-org/xtool) and driving an iPhone without Xcode
+
+Later: the same flow on several phones in parallel, recording a flow by using the app, and redacted repro bundles you can attach to an issue.
+
+## Help wanted
+
+- **An iPhone and a Mac.** iOS is the biggest open piece and the maintainer has neither, so none of it can be tested here. If you like protocol-level work, this is a real open problem.
+- **Five minutes with your phone.** tethertrace is verified on one phone. Run `npx tethertrace pair <code>` and `npx tethertrace test <any apk>` on a Samsung, Pixel, Xiaomi or anything else, and [say how it went](https://github.com/Saurabhzz9/tethertrace/discussions), good or bad.
+- **A React Native project.** Run `tethertrace build` on it and report what happens.
+- **A bad network.** Installs are tested against a simulated dead link only. Reports from office Wi-Fi with packet loss are welcome.
 
 ## Contributing
 
