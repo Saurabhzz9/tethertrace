@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import {
-  detectProjects, inspectGradleAndroid, build, classifyBuildFailure, apkSignature, pickArtifact,
+  detectProjects, inspectGradleAndroid, build, classifyBuildFailure, shouldRetryOverIpv4, findApks, apkSignature, pickArtifact,
   resolveAndroidToolchain, findJdks, pickJdk, parseJavaVersion, parseCmdlineTools, parseLocalProperties, installJdk,
   download, extractZip, ToolchainError,
 } from "../dist/index.js";
@@ -287,6 +287,13 @@ test("build failures are sorted into categories with the lines that matter", () 
   assert.equal(c("* What went wrong:\nCould not resolve com.squareup.okhttp3:okhttp:4.12.0.\n > Could not GET 'https://repo.maven.apache.org/...'"), "dependency_download_failed");
   assert.match(classifyBuildFailure("No cached version of com.x:y:1 available for offline mode.\nCould not resolve com.x:y:1").hints[0], /without --offline/);
   assert.equal(c("java.io.IOException: No space left on device"), "out_of_disk");
+  // A dead IPv6 route makes Java time out on downloads that work over IPv4: retried once, never twice.
+  const timedOut = 'Exception in thread "main" java.net.ConnectException: Connection timed out: connect';
+  assert.equal(c(timedOut), "dependency_download_failed");
+  assert.equal(shouldRetryOverIpv4(timedOut, {}), true);
+  assert.equal(shouldRetryOverIpv4(timedOut, { JAVA_TOOL_OPTIONS: "-Djava.net.preferIPv4Stack=true" }), false);
+  assert.equal(shouldRetryOverIpv4("Could not GET 'https://repo/x'. Received status code 404", {}), false);
+  assert.equal(shouldRetryOverIpv4("e: Main.kt:1 Unresolved reference", {}), false);
   const oom = classifyBuildFailure("* What went wrong:\nGradle build daemon disappeared unexpectedly (it may have been killed or may have crashed)\n");
   assert.equal(oom.category, "out_of_memory");
   assert.match(oom.hints[0], /org\.gradle\.jvmargs/);
@@ -297,6 +304,29 @@ test("build failures are sorted into categories with the lines that matter", () 
   const other = classifyBuildFailure("* What went wrong:\nA problem occurred configuring project ':app'.\n> something odd\n\n* Try:\n> Run with --info");
   assert.equal(other.category, "build_failed");
   assert.deepEqual(other.excerpt.slice(0, 2), ["A problem occurred configuring project ':app'.", "> something odd"]);
+});
+
+test("artifacts: the variant's APKs are found even when the build was up to date, and other variants are left out", async () => {
+  const meta = (variantName, files) => JSON.stringify({ version: 3, variantName, elements: files.map((outputFile) => ({ type: "SINGLE", outputFile })) });
+  const out = await tree(await tmp(), {
+    "debug/output-metadata.json": meta("debug", ["app-debug.apk"]),
+    "debug/app-debug.apk": "x",
+    "debug/old-leftover.apk": "x",
+    "release/output-metadata.json": meta("release", ["app-release.apk", "missing.apk"]),
+    "release/app-release.apk": "x",
+    "free/debug/output-metadata.json": meta("freeDebug", ["app-free-arm64-v8a-debug.apk", "app-free-x86_64-debug.apk"]),
+    "free/debug/app-free-arm64-v8a-debug.apk": "x",
+    "free/debug/app-free-x86_64-debug.apk": "x",
+  });
+  const names = async (...a) => (await findApks(out, ...a)).map((p) => p.replace(/^.*[\\/]/, ""));
+  assert.deepEqual(await names("debug"), ["app-debug.apk"], "not the leftover, not other variants");
+  assert.deepEqual(await names("release"), ["app-release.apk"], "a file the metadata names but that is absent is not reported");
+  assert.deepEqual(await names("freeDebug"), ["app-free-arm64-v8a-debug.apk", "app-free-x86_64-debug.apk"]);
+  assert.deepEqual(await names("paidDebug"), [], "a variant that was not built has no artifacts");
+  const flutter = await tree(await tmp(), { "app-debug.apk": "x", "app-release.apk": "x", "app-arm64-v8a-release.apk": "x", "app-debug.apk.sha1": "x" });
+  assert.deepEqual((await findApks(flutter, "release", "release")).map((p) => p.replace(/^.*[\\/]/, "")), ["app-arm64-v8a-release.apk", "app-release.apk"]);
+  const legacy = await tree(await tmp(), { "debug/app-debug.apk": "x", "release/app-release-unsigned.apk": "x" });
+  assert.deepEqual((await findApks(legacy, "debug")).map((p) => p.replace(/^.*[\\/]/, "")), ["app-debug.apk"], "no metadata: match by build type");
 });
 
 test("artifacts: signature detection and choosing the APK that fits the phone", async () => {

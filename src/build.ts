@@ -52,6 +52,8 @@ export interface BuildResult {
   toolchain?: { jdk?: string; jdkVersion?: number; sdk?: string; flutter?: string };
   artifacts: BuildArtifact[];
   logFile?: string;
+  /** Things the build did on its own that the user should know about. */
+  notes?: string[];
   error?: { category: BuildErrorCategory; message: string; hints: string[]; excerpt: string[] };
 }
 
@@ -72,6 +74,14 @@ export interface BuildOptions {
   log?: (m: string) => void;
   /** Where build.log goes. Default <project>/build/tethertrace. */
   logDir?: string;
+}
+
+const IPV4_FLAG = "-Djava.net.preferIPv4Stack=true";
+
+/** A download failed by timing out (not by a 404 or a bad host name), and IPv4 has not been forced yet. */
+export function shouldRetryOverIpv4(output: string, env: NodeJS.ProcessEnv): boolean {
+  if ((env.JAVA_TOOL_OPTIONS ?? "").includes("preferIPv4Stack")) return false;
+  return /ConnectException: Connection timed out|Connect(ion)? timed out|Network is unreachable|No route to host/i.test(output);
 }
 
 export class BuildError extends Error {
@@ -112,15 +122,31 @@ export async function apkSignature(path: string): Promise<{ v1: boolean; v2plus:
   }
 }
 
-async function findApks(dir: string, since: number): Promise<string[]> {
-  const out: string[] = [];
-  for (const e of await readdir(dir, { withFileTypes: true, recursive: true }).catch(() => [])) {
-    if (!e.isFile() || !/\.apk$/i.test(e.name)) continue;
-    const p = join(e.parentPath, e.name);
-    // Only what this build produced; leftovers from older builds are not this build's artifacts.
-    if ((await stat(p)).mtimeMs >= since - 2000) out.push(p);
+/**
+ * The APKs of one variant. An up-to-date build leaves its APK untouched, so file times cannot tell
+ * this build's output from leftovers. Gradle's own output-metadata.json can: it names the variant
+ * and its files. Flutter names its copies after the build mode.
+ */
+export async function findApks(dir: string, variant: string, flutterMode?: string): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true, recursive: true }).catch(() => []);
+  const out = new Set<string>();
+  if (flutterMode) {
+    for (const e of entries) if (e.isFile() && new RegExp(`^app(-.+)?-${flutterMode}\\.apk$`, "i").test(e.name)) out.add(join(e.parentPath, e.name));
+    return [...out].sort();
   }
-  return out.sort();
+  for (const e of entries) {
+    if (!e.isFile() || e.name !== "output-metadata.json") continue;
+    try {
+      const meta = JSON.parse(await readFile(join(e.parentPath, e.name), "utf8")) as { variantName?: string; elements?: { outputFile?: string }[] };
+      if (meta.variantName?.toLowerCase() !== variant.toLowerCase()) continue;
+      for (const el of meta.elements ?? []) if (el.outputFile && (await pathExists(join(e.parentPath, el.outputFile)))) out.add(join(e.parentPath, el.outputFile));
+    } catch {
+      // unreadable metadata: fall through to the folder-name match below
+    }
+  }
+  // Older Android Gradle Plugins write no metadata: take the APKs whose file name ends with the variant's build type.
+  if (!out.size && !entries.some((e) => e.name === "output-metadata.json")) for (const e of entries) if (e.isFile() && /\.apk$/i.test(e.name) && e.name.toLowerCase().includes(variant.toLowerCase().replace(/^.*(debug|release)$/, "$1"))) out.add(join(e.parentPath, e.name));
+  return [...out].sort();
 }
 
 export async function describeArtifact(path: string): Promise<BuildArtifact> {
@@ -148,7 +174,7 @@ export function classifyBuildFailure(output: string): { category: BuildErrorCate
     };
     if (/No space left on device|There is not enough space on the disk/i.test(output)) return { category: "out_of_disk", hints: ["Free some disk space; `tethertrace toolchain clean` removes toolchains tethertrace downloaded."], excerpt: summary };
   if (/Could not resolve|Could not GET|Could not download|Unknown host|No cached version .* available for offline mode|Connection (timed out|refused)/i.test(output))
-    return { category: "dependency_download_failed", hints: [/offline mode/.test(output) ? "A dependency is not in the cache; build once without --offline." : "A dependency could not be downloaded. Check the network (and any proxy), then build again."], excerpt: [...summary, ...pick(/Could not (resolve|GET|download)/, 5)] };
+    return { category: "dependency_download_failed", hints: [/timed out/i.test(output) && !/offline mode/.test(output) ? "A download timed out. Check the network, proxy or VPN, then build again." : /offline mode/.test(output) ? "A dependency is not in the cache; build once without --offline." : "A dependency could not be downloaded. Check the network (and any proxy), then build again."], excerpt: [...summary, ...pick(/Could not (resolve|GET|download)/, 5)] };
   const compile = pick(/^(e: |.*\.(kt|java|dart):\d+.*(error|Error))|: error: |^lib\/.*\.dart:\d+:\d+: Error/);
   if (compile.length || /Compilation (error|failed)|compileDebug(Kotlin|JavaWithJavac).*FAILED|Compilation failed/i.test(output))
     return { category: "compile_error", hints: ["The app's own code does not compile. Fix the errors below and build again."], excerpt: compile.length ? compile : summary };
@@ -250,6 +276,7 @@ export async function build(o: BuildOptions = {}): Promise<BuildResult> {
     let args: string[];
     let cwd: string;
     let outputs: string[];
+    let flutterMode: string | undefined;
     const env = { ...tc.env };
 
     if (project.kind === "flutter") {
@@ -259,6 +286,7 @@ export async function build(o: BuildOptions = {}): Promise<BuildResult> {
           "Install Flutter from https://docs.flutter.dev/get-started/install and make sure `flutter` is on PATH. tethertrace does not download Flutter itself yet.",
         ]);
       result.toolchain.flutter = flutter;
+      flutterMode = /release$/i.test(variant) ? "release" : /profile$/i.test(variant) ? "profile" : "debug";
       const mode = /release$/i.test(variant) ? "--release" : /profile$/i.test(variant) ? "--profile" : "--debug";
       const flavor = module.flavors.find((f) => variant.toLowerCase().startsWith(f.toLowerCase()));
       cmd = flutter;
@@ -284,14 +312,22 @@ export async function build(o: BuildOptions = {}): Promise<BuildResult> {
     }
     result.command = `${cmd} ${args.join(" ")}`;
     log(`Running: ${result.command}`);
-    const r = await run(cmd, args, { cwd, env, timeoutMs, signal: o.signal, onLine, logFile: result.logFile });
+    let r = await run(cmd, args, { cwd, env, timeoutMs, signal: o.signal, onLine, logFile: result.logFile });
+    // Seen on a real network: Java tries IPv6 first, the route is dead, and every download times
+    // out although the same URL works over IPv4. Try once more over IPv4 before giving up.
+    if (r.code !== 0 && !r.cancelled && !r.timedOut && !o.offline && shouldRetryOverIpv4(r.output, env)) {
+      log("  Downloads timed out. Trying once more over IPv4…");
+      env.JAVA_TOOL_OPTIONS = `${env.JAVA_TOOL_OPTIONS ?? ""} ${IPV4_FLAG}`.trim();
+      result.notes = ["Downloads timed out at first; the build was repeated with Java set to prefer IPv4 (JAVA_TOOL_OPTIONS=-Djava.net.preferIPv4Stack=true)."];
+      r = await run(cmd, args, { cwd, env, timeoutMs, signal: o.signal, onLine, logFile: result.logFile });
+    }
     if (r.cancelled) return fail("cancelled", "The build was cancelled.");
     if (r.timedOut) return fail("timeout", `The build did not finish within ${Math.round(timeoutMs / 60_000)} minutes.`, ["Raise --timeout, or check the log for a step that hangs."]);
     if (r.code !== 0) {
       const c = classifyBuildFailure(r.output);
       return fail(c.category, `The build failed (exit ${r.code}).`, c.hints, c.excerpt);
     }
-    const apks = (await Promise.all(outputs.map((d) => findApks(d, started)))).flat();
+    const apks = (await Promise.all(outputs.map((d) => findApks(d, variant, flutterMode)))).flat();
     if (!apks.length) return fail("no_artifact", "The build finished but produced no APK.", [`Looked in ${outputs.join(", ")}`]);
     result.artifacts = await Promise.all(apks.map(describeArtifact));
     const unsigned = result.artifacts.filter((a) => !a.signature.v1 && !a.signature.v2plus);

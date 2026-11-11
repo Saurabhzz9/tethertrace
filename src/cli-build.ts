@@ -40,12 +40,13 @@ export function terminalConsent(yes: boolean | undefined): Consent {
 export function printBuildResult(r: BuildResult) {
   if (r.ok) {
     console.log(`\n✔ Built ${r.project?.name} (${r.variant}) in ${(r.durationMs / 1000).toFixed(0)} s`);
-    for (const a of r.artifacts) console.log(`  ${a.path}\n    ${a.packageName ?? "?"} ${a.versionName ?? ""}  ${(a.sizeBytes / 1e6).toFixed(1)} MB  signed: ${a.signature.v2plus ? "v2+" : a.signature.v1 ? "v1" : "no"}`);
+    for (const a of r.artifacts) console.log(`  ${a.path}\n    ${a.packageName ?? "?"} ${a.versionName ?? ""}  ${a.sizeBytes < 1e6 ? `${Math.max(1, Math.round(a.sizeBytes / 1e3))} KB` : `${(a.sizeBytes / 1e6).toFixed(1)} MB`}  signed: ${a.signature.v2plus ? "v2+" : a.signature.v1 ? "v1" : "no"}`);
   } else {
     console.log(`\n✖ ${r.error!.category}: ${r.error!.message}`);
     for (const l of r.error!.excerpt) console.log(`  ${l}`);
     for (const h of r.error!.hints) console.log(`→ ${h}`);
   }
+  for (const n of r.notes ?? []) console.log(`note: ${n}`);
   if (r.logFile) console.log(`Build log: ${r.logFile}`);
 }
 
