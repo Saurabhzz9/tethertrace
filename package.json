@@ -27,7 +27,6 @@
     "url": "https://github.com/Saurabhzz9/tethertrace/issues"
   },
   "homepage": "https://github.com/Saurabhzz9/tethertrace#readme",
-  "private": true,
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -47,13 +46,19 @@
     "dist",
     "skills",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": false
+  },
   "scripts": {
     "build": "tsc",
     "prepare": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build && node --test tests/*.test.mjs"
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "prepublishOnly": "npm test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",

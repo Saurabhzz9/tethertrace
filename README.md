@@ -18,7 +18,7 @@ No `adb`. No Android SDK. No test code. No cloud. Works with Claude, Codex and l
 </p>
 
 ```bash
-npm install -g github:Saurabhzz9/tethertrace
+npm install -g tethertrace
 tethertrace pair 123456          # once, with the code from Wireless debugging
 tethertrace test app-release.apk # install, explore, catch crashes. No test code.
 ```
@@ -63,8 +63,10 @@ A failed build comes back with a category (`compile_error`, `jdk_incompatible`, 
 You need **Node.js 22+** and an **Android 11+** phone on the same Wi-Fi.
 
 ```bash
-npm install -g github:Saurabhzz9/tethertrace
+npm install -g tethertrace
 ```
+
+Or run it without installing: `npx tethertrace <command>`, for example `npx tethertrace doctor`.
 
 1. On the phone: **Settings → Developer options → Wireless debugging → On**.
 2. Tap **Pair device with pairing code** and run, with the code you see:

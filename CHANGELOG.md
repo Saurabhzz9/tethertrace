@@ -31,6 +31,7 @@ All notable changes are listed here. The project follows [Semantic Versioning](h
 
 ### Changed
 
+- The package can be published to npm: `npm install -g tethertrace` or `npx tethertrace`. `npm publish` runs the tests first.
 - The managed Android SDK no longer uses Google's `sdkmanager`, which is deprecated. tethertrace reads Google's SDK index itself, downloads the one platform the project compiles against, checks its SHA-1 and writes the same `package.xml` the SDK manager would. This drops the 150 MB command-line tools download and the need for a JDK just to set up the SDK. An existing SDK that has `sdkmanager` still falls back to it if the direct install fails.
 - Project detection reads `compileSdk`, `minSdk` and `targetSdk` that a project defines in its root build file or `gradle.properties` (`compileSdk rootProject.ext.compileSdkVersion`), as React Native projects do. Platforms that Google publishes with a minor version (`android-37.0`) are installed and recognised.
 - The explorer never taps switches, checkboxes or radio buttons, so it can't change an app's settings (found on a real phone).
