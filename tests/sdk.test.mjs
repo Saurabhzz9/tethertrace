@@ -52,6 +52,7 @@ This is the Android Software Development Kit License Agreement</license>
   ${platform("platforms;android-36", "36", "platform-36_r02.zip")}
   ${platform("platforms;android-37", "37", "platform-37_r01.zip").replace("channel-0", "channel-1")}
   ${platform("platforms;android-33", "33", "platform-33_r03.zip", "", "0".repeat(40))}
+  ${platform("platforms;android-38.0", "38.0", "platform-38.0_r01.zip")}
   <remotePackage path="build-tools;36.0.0">
     <type-details xsi:type="generic:genericDetailsType"/>
     <revision><major>36</major><minor>0</minor><micro>0</micro></revision>
@@ -68,7 +69,7 @@ function fakeGoogle() {
   const fetchImpl = async (url) => {
     asked.push(String(url));
     if (String(url).endsWith("/repository2-3.xml")) return new Response(INDEX);
-    if (/platform-3[36]_r0\d\.zip$/.test(String(url))) return new Response(PLATFORM_ZIP, { headers: { "content-length": String(PLATFORM_ZIP.length) } });
+    if (/platform-3[36]_r0\d\.zip$|platform-38\.0_r01\.zip$/.test(String(url))) return new Response(PLATFORM_ZIP, { headers: { "content-length": String(PLATFORM_ZIP.length) } });
     return new Response("", { status: 404 });
   };
   return { asked, fetchImpl };
@@ -145,4 +146,28 @@ test("an SDK from nothing: licenses recorded only after approval, then the one p
   const project = { gradleRoot: await tmp("tt-proj-"), requiredJdk: 17, modules: [{ path: ":app", compileSdk: 36 }] };
   const t = await resolveAndroidToolchain(project, { env: { TETHERTRACE_MANAGED_ONLY: "1" } });
   assert.deepEqual(t.missing.map((m) => m.what).filter((w) => w !== "jdk"), []);
+});
+
+test("a platform published with a minor version (android-38.0) is installed and counted as that API level", async () => {
+  process.env.TETHERTRACE_HOME = await tmp("tt-home-");
+  const g = fakeGoogle();
+  const asked = [];
+  const sdk = await prepareSdk(undefined, undefined, 38, { fetchImpl: g.fetchImpl, consent: async (q) => (asked.push(q.what), true) });
+  assert.deepEqual(asked, ["Android SDK licenses", "Android SDK package platforms;android-38.0"]);
+  assert.deepEqual(sdk.platforms, [38]);
+  assert.ok(await exists(join(sdk.root, "platforms", "android-38.0", "android.jar")));
+  assert.match(await readFile(join(sdk.root, "platforms", "android-38.0", "package.xml"), "utf8"), /<localPackage path="platforms;android-38.0"/);
+});
+
+test("the sdkmanager fallback never runs without approval", async () => {
+  process.env.TETHERTRACE_HOME = await tmp("tt-home-");
+  const g = fakeGoogle();
+  // An existing SDK that has sdkmanager, and a platform the index does not list.
+  const sdk = { root: await tmp("tt-sdk-"), source: "ANDROID_HOME", licensesAccepted: true, hasCmdlineTools: true, platforms: [], buildTools: [] };
+  const asked = [];
+  await assert.rejects(
+    prepareSdk(sdk, { home: "/nowhere", version: 17, source: "test" }, 99, { fetchImpl: g.fetchImpl, consent: async (q) => (asked.push(q.what), false) }),
+    (e) => e instanceof ToolchainError && e.code === "CONSENT",
+  );
+  assert.deepEqual(asked, ["Android SDK package platforms;android-99.0 (through sdkmanager)"]);
 });

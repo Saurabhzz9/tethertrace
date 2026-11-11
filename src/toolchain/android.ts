@@ -174,7 +174,7 @@ export async function installJdk(feature: number, o: ResolveOptions): Promise<Jd
 
 async function sdkAt(root: string, source: string): Promise<AndroidSdk | undefined> {
   if (!(await pathExists(root))) return undefined;
-  const platforms = (await childDirs(join(root, "platforms"))).map((d) => Number(/android-(\d+)$/.exec(d)?.[1])).filter((n) => Number.isInteger(n));
+  const platforms = (await childDirs(join(root, "platforms"))).map((d) => Number(/android-(\d+)(?:\.\d+)?$/.exec(d)?.[1])).filter((n) => Number.isInteger(n));
   const buildTools = (await childDirs(join(root, "build-tools"))).map((d) => d.split(/[\\/]/).pop()!);
   const hasCmdlineTools = await pathExists(sdkmanagerPath(root));
   const licensesAccepted = await pathExists(join(root, "licenses", "android-sdk-license"));
@@ -347,7 +347,7 @@ export async function installSdkPackage(sdkRoot: string, path: string, o: Resolv
   const res = await f(`${SDK_REPO}repository2-3.xml`, { signal: o.signal });
   if (!res.ok) throw new ToolchainError("DOWNLOAD", `Google's SDK index answered ${res.status}`);
   const pkg = parseSdkPackage(await res.text(), path, SDK_HOST[process.platform]);
-  if (!pkg) throw new ToolchainError("DOWNLOAD", `Google's SDK index has no stable package ${path} for this computer`);
+  if (!pkg) throw new ToolchainError("NOT_FOUND", `Google's SDK index has no stable package ${path} for this computer`);
   const mb = Math.round(pkg.size / 1e6);
   if (!(await (o.consent?.({ what: `Android SDK package ${path}`, detail: `${pkg.url} from dl.google.com`, downloadMb: mb, license: "Android Software Development Kit License" }) ?? false)))
     throw new ToolchainError("CONSENT", `${path} is needed and was not approved for download (${mb} MB). Re-run with --yes, or install it with your own SDK manager.`);
@@ -385,20 +385,30 @@ export async function prepareSdk(sdk: AndroidSdk | undefined, jdk: Jdk | undefin
     await writeSdkLicense(root);
   }
   if (needPlatform) {
-    const path = `platforms;android-${compileSdk}`;
+    let path = `platforms;android-${compileSdk}`;
     o.log?.(`Installing Android platform ${compileSdk} (the one this project compiles against)…`);
     try {
-      await installSdkPackage(root, path, o);
+      try {
+        await installSdkPackage(root, path, o);
+      } catch (e) {
+        if (!(e instanceof ToolchainError) || e.code !== "NOT_FOUND") throw e;
+        // From API 37 on, Google publishes platforms with a minor version: android-37.0.
+        path = `platforms;android-${compileSdk}.0`;
+        await installSdkPackage(root, path, o);
+      }
     } catch (e) {
       const code = e instanceof ToolchainError ? e.code : "";
       // Fall back to the SDK's own (deprecated) manager when it is there; otherwise report why.
       if (code === "CONSENT" || code === "CANCELLED" || !sdk?.hasCmdlineTools || !jdk) throw e;
+      // Nothing was approved yet if the direct route failed before its own question, so ask here.
+      if (!(await (o.consent?.({ what: `Android SDK package ${path} (through sdkmanager)`, detail: `The direct download failed: ${(e as Error).message}`, downloadMb: 80, license: "Android Software Development Kit License" }) ?? false)))
+        throw new ToolchainError("CONSENT", `Android platform ${compileSdk} is needed and was not approved for download. Re-run with --yes, or install it with your own SDK manager.`);
       o.log?.(`  direct install failed (${(e as Error).message}); trying sdkmanager…`);
       const env = { ...(o.env ?? process.env), JAVA_HOME: jdk.home, ANDROID_HOME: root, ANDROID_SDK_ROOT: root };
       const r = await run(sdkmanagerPath(root), [`--sdk_root=${root}`, path], { env, input: "y\n".repeat(10), timeoutMs: 20 * 60_000, signal: o.signal, onLine: (l) => /\d+%/.test(l) || o.log?.(`  ${l}`) });
       if (r.cancelled) throw new ToolchainError("CANCELLED", "Cancelled");
       // The tool can exit 0 after printing "Package ... not found", so check the result, not the exit code.
-      if (r.code !== 0 || !(await pathExists(join(root, "platforms", `android-${compileSdk}`))))
+      if (r.code !== 0 || !(await sdkAt(root, source))?.platforms.includes(compileSdk!))
         throw new ToolchainError("DOWNLOAD", `sdkmanager could not install ${path}: ${r.output.split(String.fromCharCode(10)).filter((l) => l.trim()).slice(-6).join(" | ")}`);
     }
   }
