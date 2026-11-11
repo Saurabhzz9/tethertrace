@@ -254,7 +254,9 @@ export async function build(o: BuildOptions = {}): Promise<BuildResult> {
       tc = await resolveAndroidToolchain(project.android, { install: o.install, consent: o.consent, signal: o.signal, log });
     } catch (e) {
       if (e instanceof ToolchainError) return fail(e.code === "CONSENT" ? "consent_declined" : e.code === "CANCELLED" ? "cancelled" : e.code === "DISK_SPACE" ? "out_of_disk" : "toolchain_missing", e.message);
-      throw e;
+      // Anything else (a locked file, a permission error) still becomes a result the caller can read.
+      const err = e as NodeJS.ErrnoException;
+      return fail("toolchain_missing", `Setting up the toolchain failed: ${err.code ? `${err.code}: ` : ""}${err.message}`, [], (err.stack ?? "").split(String.fromCharCode(10)).slice(1, 6).map((l) => l.trim()));
     }
     result.toolchain = { jdk: tc.jdk?.home, jdkVersion: tc.jdk?.version, sdk: tc.sdk?.root };
     const blocking = tc.missing.filter((m) => m.what === "jdk" || m.what === "sdk");
