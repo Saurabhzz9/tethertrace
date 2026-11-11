@@ -264,7 +264,8 @@ export async function build(o: BuildOptions = {}): Promise<BuildResult> {
       cmd = flutter;
       args = ["build", "apk", mode, ...(flavor ? ["--flavor", flavor] : []), ...(o.offline ? ["--offline"] : [])];
       cwd = project.root;
-      outputs = [join(project.root, "build", "app", "outputs")];
+      // Flutter copies the Gradle output here; listing both folders would show every APK twice.
+      outputs = [join(project.root, "build", "app", "outputs", "flutter-apk")];
     } else {
       if (project.kind === "react-native" && !(await pathExists(join(project.root, "node_modules"))))
         return fail("toolchain_missing", "node_modules is missing, so the React Native Gradle plugin cannot be loaded.", ["Install the project's dependencies first (npm install, yarn or pnpm install), then build again. tethertrace does not run package installs for you."]);
