@@ -11,6 +11,7 @@ import { Device, SelectorError, type Selector } from "./device.js";
 import { explainLocally, explainWithModel, loadReport } from "./explain.js";
 import { explore } from "./explore.js";
 import { startMcpServer } from "./mcp.js";
+import { approve, listApprovals, parseClasses } from "./policy.js";
 import { loadFlow, runFlow } from "./runner.js";
 import { formatNodes, smoke } from "./smoke.js";
 import { Recording, attachRecording, recordWhile } from "./record.js";
@@ -407,13 +408,42 @@ program
   .command("mcp")
   .description("Start the MCP server (stdio) so Claude Code, Codex, Gemini CLI, Cursor or any MCP client can drive the phone")
   .addOption(deviceOpt())
-  .option("--read-only", "only expose tools that look (no tap/type/install/launch)")
-  .option("--allow-shell", "also expose a raw shell tool")
-  .option("--package <name...>", "restrict app tools to these packages")
+  .option("--read-only", "only expose tools that look (no tap/type/install/launch/shell); wins over --allow-shell")
+  .option("--allow-shell", "also expose a raw shell tool (never with --read-only or --package)")
+  .option("--package <name...>", "restrict everything to these apps: tools refuse to read or touch the screen while another app is in front")
   .option("--reports <dir>", "where reports are written", "reports")
+  .option("--confirm <classes>", "ask a person before each call of these kinds: interact, install, execute, sensitive (comma-separated)")
+  .option("--preauthorize <classes>", "approve these kinds in advance for an unattended session (overrides --confirm)")
+  .option("--no-audit", "do not write the local audit log (~/.tethertrace/audit.jsonl)")
   .addHelpText("after", "\nClaude Code:  claude mcp add tethertrace -- tethertrace mcp\nCodex:        add [mcp_servers.tethertrace] with command = \"tethertrace\", args = [\"mcp\"] to ~/.codex/config.toml\nOther clients (Gemini CLI, Cursor, VS Code, Claude Desktop, local models): docs/mcp.md")
-  .action(async (o: { device?: string; readOnly?: boolean; allowShell?: boolean; package?: string[]; reports: string }) => {
-    await startMcpServer({ device: o.device, readOnly: o.readOnly, allowShell: o.allowShell, packages: o.package, reportsDir: o.reports });
+  .action(async (o: { device?: string; readOnly?: boolean; allowShell?: boolean; package?: string[]; reports: string; confirm?: string; preauthorize?: string; audit: boolean }) => {
+    if (o.readOnly && o.allowShell) console.error("tethertrace: --read-only wins over --allow-shell; the shell tool stays off.");
+    if (o.package?.length && o.allowShell) console.error("tethertrace: shell cannot be limited to one app; it stays off while --package is set.");
+    await startMcpServer({
+      device: o.device,
+      readOnly: o.readOnly,
+      allowShell: o.allowShell,
+      packages: o.package,
+      reportsDir: o.reports,
+      confirm: parseClasses(o.confirm, "--confirm"),
+      preauthorize: parseClasses(o.preauthorize, "--preauthorize"),
+      auditFile: o.audit ? undefined : false,
+    });
+  });
+
+program
+  .command("approve")
+  .description("Approve an action an AI agent asked for (used with `mcp --confirm`). Without an id, lists what is waiting")
+  .argument("[id]")
+  .action(async (id?: string) => {
+    if (!id) {
+      const all = (await listApprovals()).filter((a) => !a.approved);
+      if (!all.length) return console.log("Nothing is waiting for approval.");
+      for (const a of all) console.log(`${a.id}  ${a.tool} (${a.classes.join(", ")})  ${a.summary}`);
+      return;
+    }
+    const a = await approve(id);
+    console.log(`Approved once: ${a.summary}`);
   });
 
 program.parseAsync().catch((e: unknown) => {

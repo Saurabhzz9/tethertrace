@@ -169,7 +169,20 @@ function categorize(e: unknown, kind: string): FailureCategory {
   return "unknown";
 }
 
-export async function runFlow(d: Device, flow: Flow, opts: { outDir: string; log?: (m: string) => void }): Promise<RunSummary> {
+/** Steps that act on whatever is on screen (as opposed to waiting, asserting or capturing). */
+const ACTING_STEPS = new Set(["tap", "longPress", "type", "key", "back", "home", "scroll"]);
+
+export interface RunFlowOptions {
+  outDir: string;
+  log?: (m: string) => void;
+  /**
+   * Called before every step that acts on the screen. Throw to stop the run. The MCP server uses
+   * this to keep a package-scoped session inside its app; `key` is set for key presses.
+   */
+  beforeAction?: (action: { kind: string; key?: string }) => Promise<void>;
+}
+
+export async function runFlow(d: Device, flow: Flow, opts: RunFlowOptions): Promise<RunSummary> {
   const log = opts.log ?? (() => undefined);
   await mkdir(opts.outDir, { recursive: true });
   const files: string[] = [];
@@ -200,6 +213,9 @@ export async function runFlow(d: Device, flow: Flow, opts: { outDir: string; log
     const t0 = Date.now();
     log(`${String(i + 1).padStart(2)}. ${rec.step}`);
     try {
+      const kind = typeof step === "string" ? step : (Object.keys(step ?? {})[0] ?? "");
+      if (opts.beforeAction && ACTING_STEPS.has(kind))
+        await opts.beforeAction({ kind, key: kind === "back" || kind === "home" ? kind : kind === "key" ? String((step as Record<string, unknown>).key) : undefined });
       rec.detail = await execStep(d, flow, step, ctx);
       const pid = await d.pidOf(flow.app).catch(() => undefined);
       if (pid) pids.add(pid);

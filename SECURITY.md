@@ -25,4 +25,6 @@ Out of scope: the inherent power of Android Wireless debugging itself (anyone yo
 - Pair only computers you control, and only on networks you trust.
 - Turn Wireless debugging off when you're done. Revoke old pairings in Developer options.
 - Give AI agents `--read-only` or `--package <your app>` unless they need more. Keep `--allow-shell` off.
+- For anything you would not want done without you, add `--confirm install,execute,sensitive`. The server then waits for your approval on each call.
+- `~/.tethertrace/audit.jsonl` records what agents were allowed and denied. The full model is in [docs/mcp.md](docs/mcp.md#security-model).
 - Review reports before sharing: screenshots and logs can contain personal data.

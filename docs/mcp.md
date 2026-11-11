@@ -111,11 +111,64 @@ tethertrace explain reports/<run> -m openai-compatible:<model> --base-url http:/
 
 | Flag | Effect |
 |---|---|
-| `--device host:port` | Use this phone instead of auto-discovery |
-| `--read-only` | Expose only the "no" rows above |
-| `--package <name...>` | App tools refuse any other package |
-| `--allow-shell` | Add the raw `shell` tool |
+| `--device host:port` | Use this phone instead of auto-discovery. The server then stays on it: `select_device` refuses any other address |
+| `--read-only` | Expose only the "no" rows above. Wins over `--allow-shell` |
+| `--package <name...>` | Limit the session to these apps (see below) |
+| `--allow-shell` | Add the raw `shell` tool. Never with `--read-only` or `--package` |
+| `--confirm <classes>` | A person must approve every call of these kinds: `interact`, `install`, `execute`, `sensitive` |
+| `--preauthorize <classes>` | Approve these kinds in advance for an unattended run (overrides `--confirm`) |
+| `--no-audit` | Do not write the audit log |
 | `--reports <dir>` | Where reports go (default `./reports`) |
+
+## Security model
+
+The server decides what is allowed. It does not rely on the client asking you, and the `readOnlyHint` style annotations it sends are only hints.
+
+Every tool belongs to a permission class, and every call passes one policy check before it touches the phone:
+
+| Class | Tools | Granted when |
+|---|---|---|
+| `read` | `discover_devices`, `select_device`, `device_info`, `list_apps`, `apk_info`, `screenshot`, `record_screen`, `ui_tree`, `wait_for`, `app_logs`, `explain_report` | always |
+| `interact` | `tap`, `type_text`, `press_key`, `scroll`, `swipe`, `launch_app`, `stop_app`, `run_flow`, `smoke_test`, `explore_app` | not `--read-only` |
+| `install` | `install_apk`, and `smoke_test` / `explore_app` when given an APK | not `--read-only` |
+| `execute` | `shell` | `--allow-shell`, and neither `--read-only` nor `--package` |
+| `sensitive` | `pair_device` | not `--read-only` |
+
+A tool whose class is not granted is not listed, and is refused again if it is called anyway.
+
+### `--package` is enforced on the phone
+
+It is not only a check on tool arguments. Before a tool reads or touches the screen, the server asks Android which app has focus:
+
+- If another app is in front, `tap`, `type_text`, `press_key`, `scroll`, `swipe`, `screenshot`, `ui_tree` and `wait_for` are refused. `launch_app` brings your app back.
+- If Android does not name an app (notification shade, lock screen) or the check fails, the answer is also no.
+- Raw coordinates must land on an element of your app, so the status bar and navigation bar are out of reach. A tap by text must match an element of your app.
+- The `home`, `recents` and `menu` keys are refused.
+- A YAML flow is checked before every step that acts, so it stops as soon as it leaves the app.
+- `record_screen` is off, because a recording cannot be limited to one app. Use `record: true` on a test instead. `list_apps` shows only your apps.
+- Permission dialogs belong to Android's own package, so an agent cannot answer them in a scoped session. Grant permissions yourself, or add that package to `--package` on purpose.
+
+An APK is installed only as the app it contains: `smoke_test` and `explore_app` refuse an `apkPath` whose package differs from `package`.
+
+### Confirmation
+
+With `--confirm install,execute` (any classes), each such call needs a person.
+
+- If your client supports MCP elicitation, it asks you there.
+- Otherwise the call is refused with an id. You run `tethertrace approve <id>` in a terminal and the agent repeats the call. One approval covers one call and expires after 10 minutes. `tethertrace approve` with no id lists what is waiting.
+- For CI, either leave `--confirm` out or name the classes you trust with `--preauthorize`.
+
+This protects you from a client that approves tool calls automatically. It cannot protect you from an agent that may run any shell command on your computer, because that agent could run `tethertrace approve` itself. Keep your client's own shell permissions on.
+
+### Audit log
+
+Every decision is appended to `~/.tethertrace/audit.jsonl` (`TETHERTRACE_HOME` moves it): time, tool, classes, allowed or denied, the reason, and the package or file involved. Typed text is never written. Shell commands are recorded up to 200 characters.
+
+### Known limits
+
+- The focus check and the action are two steps, so an app that changes the screen in between can still receive one action.
+- These checks apply to the MCP server. The `tethertrace` CLI runs as you and is not restricted.
+- The scope checks have been tested against a mock device, not yet on a real phone.
 
 ## Good prompts
 

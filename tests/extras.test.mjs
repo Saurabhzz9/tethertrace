@@ -164,7 +164,7 @@ async function mcpAgainstMock(opts = {}) {
     return undefined;
   };
   const dev = await startAdbd({ mode: "tls", trusted: [key.publicKeyString], handler });
-  const server = createMcpServer(key, { device: `127.0.0.1:${dev.port}`, ...opts });
+  const server = createMcpServer(key, { device: `127.0.0.1:${dev.port}`, auditFile: false, ...opts });
   const [a, b] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test", version: "1" });
   await Promise.all([server.connect(a), client.connect(b)]);

@@ -12,6 +12,16 @@ All notable changes are listed here. The project follows [Semantic Versioning](h
 - Screen recording: `tethertrace record`, `--record` on `run`, `test` and `smoke`, `record_screen` and `record: true` in MCP. Uses Android's `screenrecord` when it works and falls back to continuous screenshots with a built-in player (plus an MP4 when ffmpeg is installed).
 - Explorer coverage: `coverage.level` (`ok`, `limited`, `none`) next to the verdict in the report, CLI, `summary.json` and MCP, with plain warnings when nothing could be tapped (canvas UIs, games, secure screens), when screens exposed no elements, when unlabeled controls were skipped, or when the action/time limit was hit.
 
+### Security
+
+- One authorization policy (`src/policy.ts`) now sits in front of every MCP tool. Each tool has a permission class (`read`, `interact`, `install`, `execute`, `sensitive`), and a call is checked on the server before it reaches the phone. MCP annotations are hints only.
+- Fixed: `--read-only --allow-shell` exposed the raw shell. Read-only now wins.
+- Fixed: `--package` only checked tool arguments. `tap`, `type_text`, `press_key`, `scroll`, `swipe`, `screenshot`, `ui_tree` and `wait_for` worked on whatever app was in front, and a YAML flow could leave its app and keep going. The server now checks which app has focus before every such call and every acting flow step. It refuses raw coordinates and elements that belong to another app, refuses the `home`, `recents` and `menu` keys, and refuses when it cannot tell.
+- Fixed: `smoke_test` and `explore_app` installed `apkPath` unchecked when `package` was also given, so an APK of another app could be installed under an allowed name.
+- Fixed: a server started with `--device` could be moved to another phone with `select_device`.
+- `shell` and `record_screen` are unavailable in a package-scoped session, and `list_apps` shows only the scoped apps.
+- New: `--confirm <classes>` for server-enforced approval (MCP elicitation, or `tethertrace approve <id>` from a terminal), `--preauthorize <classes>` for unattended runs, and a local audit log at `~/.tethertrace/audit.jsonl` (`--no-audit` turns it off).
+
 ### Changed
 
 - The explorer never taps switches, checkboxes or radio buttons, so it can't change an app's settings (found on a real phone).

@@ -95,7 +95,15 @@ Then ask: *"Install app-release.apk on my phone, open the login screen, try sign
 
 The agent gets these tools: `discover_devices`, `pair_device`, `select_device`, `device_info`, `list_apps`, `apk_info`, `screenshot`, `ui_tree`, `wait_for`, `tap`, `type_text`, `press_key`, `scroll`, `swipe`, `launch_app`, `stop_app`, `install_apk`, `app_logs`, `smoke_test`, `explore_app`, `run_flow`, `record_screen`, `explain_report`. Tests can record the screen with `record: true`.
 
-Safety switches: `--read-only` (look, never touch), `--package com.my.app` (only your app), `--allow-shell` (raw shell is off by default).
+Safety is enforced by the server, not left to the client:
+
+- `--read-only`: look, never touch.
+- `--package com.my.app`: refuses to read or touch the screen while any other app is in front.
+- `--allow-shell`: raw shell is off unless you add this.
+- `--confirm install,execute`: a person approves each such call.
+- Every decision goes to a local audit log.
+
+Details: [docs/mcp.md](docs/mcp.md#security-model).
 
 Gemini CLI, Cursor, VS Code, Claude Desktop and local models (Ollama, LM Studio): see **[docs/mcp.md](docs/mcp.md)**.
 
