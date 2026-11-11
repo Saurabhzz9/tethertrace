@@ -186,7 +186,14 @@ export class Device {
 
   /** Visible UI elements (text / description / id / bounds) from a hierarchy dump. */
   async uiNodes() {
-    return parseUiNodes(await this.uiXml());
+    let nodes = parseUiNodes(await this.uiXml());
+    // A WebView builds its accessibility tree only after something first asks for it, so the first
+    // read of a web screen shows an empty WebView. Ask again before believing it is empty.
+    for (let i = 0; i < 2 && hasEmptyWebView(nodes); i++) {
+      await new Promise((r) => setTimeout(r, 700));
+      nodes = parseUiNodes(await this.uiXml());
+    }
+    return nodes;
   }
 
   /** Stream an APK to `cmd package install` — no temp file on the phone. */
@@ -224,6 +231,24 @@ export class Device {
     const out = (await withTimeout(s.readAll(), 180_000, () => s.close(), new AdbError("TIMEOUT", "Install timed out"))).toString("utf8").trim();
     if (!/^Success/m.test(out)) throw new AdbError("PROTOCOL", `Install failed: ${out.slice(0, 300)}`);
     return out;
+  }
+
+  /**
+   * Write a file into a debuggable app's private folder, as that app (`run-as`). Returns what the
+   * phone printed; it ends with TAPP_SENT when every byte arrived. Works only for apps built
+   * debuggable, which is how Android lets a developer reach an app's own storage.
+   */
+  async pushAs(pkg: string, relPath: string, data: Buffer) {
+    assertPackage(pkg);
+    if (!/^[\w./-]+$/.test(relPath) || relPath.startsWith("/") || relPath.split("/").includes("..")) throw new Error(`Unsafe path "${relPath}"`);
+    const dir = relPath.includes("/") ? relPath.slice(0, relPath.lastIndexOf("/")) : ".";
+    const s = await this.adb.open(`exec:run-as ${pkg} sh -c 'mkdir -p ${dir} && head -c ${data.length} > ${relPath} && echo TAPP_SENT'`);
+    try {
+      if (data.length) await s.write(data);
+      return (await withTimeout(s.readAll(), 60_000, () => s.close(), new AdbError("TIMEOUT", "The phone did not confirm the file"))).toString("utf8");
+    } finally {
+      s.close();
+    }
   }
 
   // ---- Interaction -------------------------------------------------------
@@ -415,11 +440,22 @@ export interface UiNode {
 
 const unescape = (s: string) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#10;/g, "\n").replace(/&amp;/g, "&");
 
+/** True when the screen has a WebView with nothing reported inside it. */
+export function hasEmptyWebView(nodes: UiNode[]): boolean {
+  return nodes.some(
+    (w) =>
+      w.cls === "android.webkit.WebView" &&
+      w.bounds[2] > w.bounds[0] &&
+      !nodes.some((n) => n !== w && n.cls !== "android.webkit.WebView" && n.bounds[0] >= w.bounds[0] && n.bounds[1] >= w.bounds[1] && n.bounds[2] <= w.bounds[2] && n.bounds[3] <= w.bounds[3] && (n.text || n.desc)),
+  );
+}
+
 export function parseUiNodes(xml: string): UiNode[] {
   const nodes: UiNode[] = [];
   for (const m of xml.matchAll(/<node\b([^>]*)>/g)) {
     const attrs: Record<string, string> = {};
-    for (const a of m[1]!.matchAll(/([\w-]+)="([^"]*)"/g)) attrs[a[1]!] = unescape(a[2]!);
+    // Android writes an attribute in single quotes when its value contains a double quote.
+    for (const a of m[1]!.matchAll(/([\w-]+)=(?:"([^"]*)"|'([^']*)')/g)) attrs[a[1]!] = unescape(a[2] ?? a[3]!);
     const b = /\[(\d+),(\d+)\]\[(\d+),(\d+)\]/.exec(attrs.bounds ?? "");
     nodes.push({
       text: attrs.text ?? "",

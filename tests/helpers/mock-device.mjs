@@ -178,7 +178,7 @@ export async function startAdbd({ mode = "tls", trusted = [], trustAny = false, 
         send(P.A_OKAY, m.arg1, u.remote);
         if (u.got >= u.expect) {
           uploads.delete(m.arg1);
-          send(P.A_WRTE, m.arg1, u.remote, Buffer.from("Success\n"));
+          send(P.A_WRTE, m.arg1, u.remote, Buffer.from(u.done));
           send(P.A_CLSE, m.arg1, u.remote);
         }
         continue;
@@ -193,8 +193,10 @@ export async function startAdbd({ mode = "tls", trusted = [], trustAny = false, 
       if (exec) {
         send(P.A_OKAY, local, remote);
         const install = /^cmd package install .*-S (\d+)/.exec(exec[1]);
-        if (install) {
-          uploads.set(local, { remote, expect: Number(install[1]), got: 0, chunks: 0 });
+        // A file written into an app's folder: run-as <pkg> sh -c '... head -c <size> > file && echo TAPP_SENT'.
+        const push = /^run-as [\w.]+ sh -c '.*head -c (\d+) > .*echo TAPP_SENT'$/.exec(exec[1]);
+        if (install || push) {
+          uploads.set(local, { remote, expect: Number((install ?? push)[1]), got: 0, chunks: 0, done: install ? "Success\n" : "TAPP_SENT\n" });
           continue;
         }
         const data = Buffer.from((handler && handler(exec[1], "exec")) ?? "");

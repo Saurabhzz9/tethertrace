@@ -100,6 +100,16 @@ jobs:
             exit 1
           fi
           echo "::notice title=SDK packages Gradle fetched itself::$(grep -E "Install .* (ready|finished|complete)" examples/android-hello/build/tethertrace/build.log | paste -sd " " - | cut -c1-600)"
+      - name: a .tapp package becomes a standalone APK with the same toolchain
+        run: |
+          node dist/cli.js pack examples/tapp-hello -o hello.tapp
+          node dist/cli.js tapp verify hello.tapp
+          node dist/cli.js convert hello.tapp --to apk -o hello.apk --yes
+          node dist/cli.js analyze hello.apk --json > hello.json
+          node -e "
+            const a = require('./hello.json');
+            if (a.packageName !== 'com.example.tapphello' || a.versionName !== '0.1.0' || !a.debuggable) { console.error(a); process.exit(1); }
+          "
       - name: what was downloaded
         run: node dist/cli.js toolchain list
       - name: second build works offline

@@ -10,3 +10,9 @@ media/
 examples/**/build/
 examples/**/.gradle/
 examples/**/local.properties
+
+# runtime host builds
+runtime/**/build/
+runtime/**/.gradle/
+runtime/**/local.properties
+*.tapp

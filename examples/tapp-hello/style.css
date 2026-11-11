@@ -1,0 +1,8 @@
+:root { color-scheme: light dark; }
+body { font: 18px/1.5 system-ui, sans-serif; margin: 0; padding: 24px; max-width: 560px; }
+h1 { margin: 0 0 4px; font-size: 28px; }
+section { margin-top: 24px; padding-top: 16px; border-top: 1px solid #8884; }
+button { font: inherit; padding: 12px 20px; margin-right: 8px; border-radius: 10px; border: 1px solid #8888; background: #2563eb; color: #fff; }
+button#reset { background: transparent; color: inherit; }
+.hint { font-size: 14px; opacity: 0.7; }
+#count { font-size: 24px; font-weight: 600; margin: 0 0 12px; }

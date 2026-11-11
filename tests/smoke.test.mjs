@@ -148,3 +148,26 @@ test("install on a slow link still completes, one acknowledged chunk at a time",
     await dev.close();
   }
 });
+
+test("parseUiNodes reads a label that contains double quotes (Android then uses single quotes)", () => {
+  // Seen on a real phone: text='… "app.js" does not match …' made the element invisible.
+  const xml = `<hierarchy><node index="0" text='Saved "notes.txt" to &quot;Docs&quot;&#10;Done' resource-id="com.x:id/msg" class="android.widget.TextView" package="com.x" content-desc="" clickable="false" bounds="[0,264][1080,400]" /><node text="it's fine" resource-id="" class="android.widget.Button" package="com.x" content-desc='say "hi"' clickable="true" bounds="[0,400][1080,500]" /></hierarchy>`;
+  const nodes = parseUiNodes(xml);
+  assert.equal(nodes.length, 2);
+  assert.equal(nodes[0].text, 'Saved "notes.txt" to "Docs"\nDone');
+  assert.equal(nodes[0].id, "com.x:id/msg");
+  assert.deepEqual(nodes[0].bounds, [0, 264, 1080, 400]);
+  assert.equal(nodes[1].text, "it's fine");
+  assert.equal(nodes[1].desc, 'say "hi"');
+  assert.equal(nodes[1].clickable, true);
+});
+
+test("a WebView that reports nothing inside it yet is recognised, so the screen is read again", async () => {
+  const { hasEmptyWebView } = await import("../dist/index.js");
+  const web = '<node text="" resource-id="" class="android.webkit.WebView" package="com.x" content-desc="" clickable="true" bounds="[0,264][1080,2280]" />';
+  const title = '<node text="My app" resource-id="" class="android.widget.TextView" package="com.x" content-desc="" clickable="false" bounds="[48,139][336,220]" />';
+  const inside = '<node text="Add one" resource-id="add" class="android.widget.Button" package="com.x" content-desc="" clickable="true" bounds="[72,864][399,1023]" />';
+  assert.equal(hasEmptyWebView(parseUiNodes(`<hierarchy>${title}${web}</hierarchy>`)), true, "only a title outside the WebView");
+  assert.equal(hasEmptyWebView(parseUiNodes(`<hierarchy>${title}${web}${inside}</hierarchy>`)), false);
+  assert.equal(hasEmptyWebView(parseUiNodes(`<hierarchy>${title}</hierarchy>`)), false, "no WebView at all");
+});

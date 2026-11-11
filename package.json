@@ -45,6 +45,14 @@
   "files": [
     "dist",
     "skills",
+    "runtime/shared",
+    "runtime/android/app/build.gradle.kts",
+    "runtime/android/app/src",
+    "runtime/android/settings.gradle.kts",
+    "runtime/android/gradle.properties",
+    "runtime/android/gradlew",
+    "runtime/android/gradlew.bat",
+    "runtime/android/gradle/wrapper",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"

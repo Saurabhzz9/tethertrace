@@ -13,6 +13,7 @@ import { explore } from "./explore.js";
 import { startMcpServer } from "./mcp.js";
 import { registerBuildCommands } from "./cli-build.js";
 import { registerVerifyCommands } from "./cli-verify.js";
+import { registerUniversalCommands, runUniversal } from "./cli-universal.js";
 import { approve, listApprovals, parseClasses } from "./policy.js";
 import { loadFlow, runFlow } from "./runner.js";
 import { formatNodes, smoke } from "./smoke.js";
@@ -308,12 +309,16 @@ program
 
 program
   .command("run")
-  .description("Run a YAML flow on the phone and save a report with evidence")
-  .argument("<flow.yaml>")
+  .description("Run a YAML flow on the phone and save a report with evidence (experimental: also runs a .tapp package with --platform)")
+  .argument("<flow.yaml>", "a YAML flow, or a .tapp package")
   .addOption(deviceOpt())
   .option("--out <dir>", "report folder (default reports/<flow>-<time>)")
   .addOption(recordOpt())
-  .action(async (file: string, o: { device?: string; out?: string; record?: boolean }) => {
+  .option("--platform <name>", "for a .tapp package: android (default), desktop or ios")
+  .option("--port <n>", "for --platform desktop: the local port")
+  .option("-y, --yes", "for a .tapp on android: approve downloads needed to build the runtime the first time")
+  .action(async (file: string, o: { device?: string; out?: string; record?: boolean; platform?: string; port?: string; yes?: boolean }) => {
+    if (await runUniversal(file, o, { withDevice, stamp, deviceOpt })) return;
     const flow = await loadFlow(file);
     const outDir = o.out ?? `reports/${flow.name}-${stamp()}`;
     await withDevice(o.device, async (d) => {
@@ -413,6 +418,7 @@ program
 
 registerBuildCommands(program, { withDevice, stamp, deviceOpt });
 registerVerifyCommands(program, { withDevice, stamp, deviceOpt });
+registerUniversalCommands(program, { withDevice, stamp, deviceOpt });
 
 // ---------------------------------------------------------------- AI agents
 
