@@ -171,3 +171,49 @@ test("a WebView that reports nothing inside it yet is recognised, so the screen 
   assert.equal(hasEmptyWebView(parseUiNodes(`<hierarchy>${title}${web}${inside}</hierarchy>`)), false);
   assert.equal(hasEmptyWebView(parseUiNodes(`<hierarchy>${title}</hierarchy>`)), false, "no WebView at all");
 });
+
+test("a tap waits while a notification covers that spot, and taps once it has gone", async () => {
+  // Seen on a real phone: right after connecting, Android shows "Wireless debugging connected" over
+  // the top of the screen, and a tap on the app's menu button opened Developer options instead.
+  const shade = (region) => `  2: name='46e6500 NotificationShade', id=234324, displayId=0, inputConfig=NOT_FOCUSABLE | TRUSTED_OVERLAY, alpha=1.00, frame=[0,0][1080,2412], touchableRegion=${region}, ownerPid=8730\n`;
+  let reads = 0;
+  const taps = [];
+  const handler = (cmd) => {
+    if (cmd.startsWith("dumpsys input")) return ++reads <= 2 ? shade("[48,0][1032,373]") : "";
+    if (cmd.startsWith("input tap ")) return taps.push([cmd, reads]), "";
+    return undefined;
+  };
+  const dev = await startAdbd({ mode: "tls", trusted: [key.publicKeyString], handler });
+  try {
+    const d = await Device.connect({ host: "127.0.0.1", port: dev.port, key });
+    assert.deepEqual(await d.systemOverlays(), [[48, 0, 1032, 373]]);
+    reads = 0;
+    await d.tapXY(96, 192); // the menu button, under the notification
+    assert.deepEqual(taps, [["input tap 96 192", 3]], "tapped only after the notification had gone");
+    reads = 10;
+    await d.tapXY(540, 1200); // nothing covers this spot
+    assert.equal(taps.length, 2);
+    d.close();
+  } finally {
+    await dev.close();
+  }
+});
+
+test("a tap is refused when the shade stays open over that spot", async () => {
+  const collapse = [];
+  const handler = (cmd) => {
+    if (cmd.startsWith("dumpsys input")) return "  2: name='46e6500 NotificationShade', inputConfig=TRUSTED_OVERLAY, touchableRegion=[0,0][1080,2412], ownerPid=1\n";
+    if (cmd === "cmd statusbar collapse") return collapse.push(cmd), "";
+    if (cmd.startsWith("input tap ")) throw new Error("must not tap");
+    return undefined;
+  };
+  const dev = await startAdbd({ mode: "tls", trusted: [key.publicKeyString], handler });
+  try {
+    const d = await Device.connect({ host: "127.0.0.1", port: dev.port, key });
+    await assert.rejects(d.waitUntilUncovered(500, 500, 300), /covering 500,500; not tapping through it/);
+    assert.equal(collapse.length, 1, "tried closing the shade once");
+    d.close();
+  } finally {
+    await dev.close();
+  }
+});

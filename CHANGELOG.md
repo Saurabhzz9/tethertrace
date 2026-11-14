@@ -2,6 +2,12 @@
 
 All notable changes are listed here. The project follows [Semantic Versioning](https://semver.org).
 
+## Unreleased
+
+### Fixed
+
+- A tap right after connecting could land on Android's "Wireless debugging connected" notification instead of the app, and open Developer options. Taps and swipes now wait until no notification covers that spot, close the shade once if it stays open, and refuse rather than tap through it. Found while using the X app on a real phone.
+
 ## 0.1.2 - 2026-11-11
 
 ### Added (experimental)

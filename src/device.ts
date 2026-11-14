@@ -304,7 +304,47 @@ export class Device {
   }
 
   async tapXY(x: number, y: number) {
+    await this.waitUntilUncovered(x, y);
     await this.shell(`input tap ${Math.round(x)} ${Math.round(y)}`);
+  }
+
+  /**
+   * Where System UI is taking touches right now: a notification that popped up over the app, or the
+   * pulled-down shade. Read from the input system, so it is what a tap would actually hit.
+   * Android shows such a notification each time a computer connects over Wireless debugging, so a
+   * tap right after connecting can land on it instead of the app.
+   */
+  async systemOverlays(): Promise<[number, number, number, number][]> {
+    const out = (await this.shell(`dumpsys input | grep -E "name='[^']*(NotificationShade|HeadsUp)"`)).text;
+    const rects: [number, number, number, number][] = [];
+    for (const line of out.split("\n")) {
+      if (/NOT_TOUCHABLE/.test(line)) continue;
+      const region = /touchableRegion=((?:\[-?\d+,-?\d+\]\[-?\d+,-?\d+\])+)/.exec(line)?.[1];
+      for (const m of region?.matchAll(/\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]/g) ?? []) {
+        const r = [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])] as [number, number, number, number];
+        if (r[2] > r[0] && r[3] > r[1] && !rects.some((o) => o.join() === r.join())) rects.push(r);
+      }
+    }
+    return rects;
+  }
+
+  /**
+   * Before touching (x, y), wait for a notification over that spot to go away (they hide after a
+   * few seconds). If something still covers it, close the shade once, then give up rather than
+   * tap whatever System UI is showing.
+   */
+  async waitUntilUncovered(x: number, y: number, timeoutMs = 8000) {
+    const covered = async () => (await this.systemOverlays()).some(([l, t, r, b]) => x >= l && x < r && y >= t && y < b);
+    const deadline = Date.now() + timeoutMs;
+    let collapsed = false;
+    while (await covered()) {
+      if (Date.now() >= deadline) {
+        if (collapsed) throw new AdbError("PROTOCOL", `A notification or the notification shade is covering ${Math.round(x)},${Math.round(y)}; not tapping through it`);
+        await this.shell("cmd statusbar collapse");
+        collapsed = true;
+      }
+      await new Promise((r) => setTimeout(r, 400));
+    }
   }
 
   async longPress(selector: Selector, durationMs = 800) {
@@ -316,6 +356,7 @@ export class Device {
   async swipeXY(x1: number, y1: number, x2: number, y2: number, durationMs = 300) {
     const v = [x1, y1, x2, y2, durationMs].map((n) => Math.round(n));
     if (v.some((n) => !Number.isFinite(n) || n < 0)) throw new Error("Invalid swipe coordinates");
+    await this.waitUntilUncovered(v[0]!, v[1]!);
     await this.shell(`input swipe ${v.join(" ")}`);
   }
 
