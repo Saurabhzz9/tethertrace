@@ -50,7 +50,7 @@ test("generated folders, editor temp files and .gitignore patterns are ignored",
   assert.ok(isIgnored("lib/generated/a.dart", gi));
 });
 
-test("watcher: a burst of saves is one batch; unchanged rewrites and ignored folders are dropped; deletes and renames are seen", async () => {
+test("watcher: a burst of saves is one batch; unchanged rewrites and ignored folders are dropped; deletes and renames are seen", { timeout: 90_000 }, async () => {
   const dir = await tmp();
   await tree(dir, { "lib/a.dart": "a", "lib/b.dart": "b", ".gitignore": "*.gen.dart\n" });
   const batches = [];
@@ -202,7 +202,7 @@ function stubBuild(state, apk) {
   };
 }
 
-test("dev session: deploys, applies an edit with rebuild+reinstall, reports build failures, crashes and disconnects truthfully, then stops cleanly", async () => {
+test("dev session: deploys, applies an edit with rebuild+reinstall, reports build failures, crashes and disconnects truthfully, then stops cleanly", { timeout: 90_000 }, async () => {
   const dir = await nativeProject();
   const home = await tmp("tt-devhome-");
   const apk = join(home, "app-debug.apk");
@@ -219,11 +219,11 @@ test("dev session: deploys, applies an edit with rebuild+reinstall, reports buil
     },
     buildFn: stubBuild(state, apk),
     healthWaitMs: 0,
-    debounceMs: 100,
+    debounceMs: 300,
     onCycle: (c) => cycles.push(c),
   });
-  await s.start();
   try {
+    await s.start();
     assert.equal(s.snap.mode, "rebuild");
     assert.equal(s.snap.pkg, APP);
     assert.equal(cycles.length, 1);
@@ -285,8 +285,9 @@ test("dev session: deploys, applies an edit with rebuild+reinstall, reports buil
   } finally {
     // Stop through the request file, as `tethertrace dev stop` does from another process.
     await requestStop(dir, home);
-    assert.ok(await until(() => s.snap.state === "stopped", 4000));
-    await s.wait();
+    const stoppedByRequest = await until(() => s.snap.state === "stopped", 4000);
+    await s.stop();
+    assert.ok(stoppedByRequest, "a stop request from another process stops the session");
   }
   assert.equal((await readSnapshot(dir, home)).state, "stopped");
   const n = cycles.length;
@@ -295,7 +296,7 @@ test("dev session: deploys, applies an edit with rebuild+reinstall, reports buil
   assert.equal(cycles.length, n, "no updates after stop");
 });
 
-test("dev session: verify off reports not_run; an interrupted session is recovered", async () => {
+test("dev session: verify off reports not_run; an interrupted session is recovered", { timeout: 90_000 }, async () => {
   const dir = await nativeProject();
   const home = await tmp("tt-devhome-");
   const apk = join(home, "a.apk");
@@ -307,24 +308,30 @@ test("dev session: verify off reports not_run; an interrupted session is recover
   const state = { calls: [], builds: 0 };
   const logs = [];
   const s = new DevSession({ dir, home, verify: "off", connect: async () => stubPhone(state), buildFn: stubBuild(state, apk), log: (m) => logs.push(m) });
-  await s.start();
-  assert.ok(logs.some((l) => /Recovered/.test(l)));
-  assert.equal(s.snap.last.verdict, "not_run");
-  await s.stop();
+  try {
+    await s.start();
+    assert.ok(logs.some((l) => /Recovered/.test(l)));
+    assert.equal(s.snap.last.verdict, "not_run");
+  } finally {
+    await s.stop();
+  }
 });
 
-test("dev session: a build for a different app id than the one named is not installed", async () => {
+test("dev session: a build for a different app id than the one named is not installed", { timeout: 90_000 }, async () => {
   const dir = await nativeProject();
   const home = await tmp("tt-devhome-");
   const apk = join(home, "a.apk");
   await writeFile(apk, "apk");
   const state = { calls: [], builds: 0 };
   const s = new DevSession({ dir, home, pkg: "com.other.app", connect: async () => stubPhone(state), buildFn: stubBuild(state, apk), healthWaitMs: 0 });
-  await s.start();
-  assert.equal(s.snap.last.verdict, "failed");
-  assert.match(s.snap.last.update.message, /refusing to install a different app/);
-  assert.equal(state.calls.filter((c) => c[0] === "install").length, 0);
-  await s.stop();
+  try {
+    await s.start();
+    assert.equal(s.snap.last.verdict, "failed");
+    assert.match(s.snap.last.update.message, /refusing to install a different app/);
+    assert.equal(state.calls.filter((c) => c[0] === "install").length, 0);
+  } finally {
+    await s.stop();
+  }
 });
 
 // ---- Flutter daemon protocol, against a fake `flutter` that speaks it ----
@@ -361,17 +368,21 @@ async function fakeFlutter() {
   return p;
 }
 
-test("flutter daemon: start waits for app.started; reload success, rejection and restart are reported as Flutter answered", async () => {
+test("flutter daemon: start waits for app.started; reload success, rejection and restart are reported as Flutter answered", { timeout: 90_000 }, async () => {
   const bin = await fakeFlutter();
   const f = new FlutterRunSession(bin, tmpdir(), "192.168.1.5:40000");
-  await f.start(20_000);
-  assert.equal(f.appId, "APP1");
-  assert.deepEqual(await f.restart(false), { ok: true, message: "Reloaded 1 of 500 libraries", restartRecommended: false });
-  const rejected = await f.restart(false);
-  assert.equal(rejected.ok, false);
-  assert.equal(rejected.restartRecommended, true);
-  assert.equal((await f.restart(true)).ok, true);
-  await f.stop();
+  try {
+    await f.start(20_000);
+    assert.equal(f.appId, "APP1");
+    assert.deepEqual(await f.restart(false), { ok: true, message: "Reloaded 1 of 500 libraries", restartRecommended: false });
+    const rejected = await f.restart(false);
+    assert.equal(rejected.ok, false);
+    assert.equal(rejected.restartRecommended, true);
+    assert.equal((await f.restart(true)).ok, true);
+    await f.stop();
+  } finally {
+    await f.stop();
+  }
   assert.ok(await until(() => !f.running, 5000), "flutter process ends on stop");
 });
 
