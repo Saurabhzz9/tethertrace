@@ -2,6 +2,32 @@
 
 All notable changes are listed here. The project follows [Semantic Versioning](https://semver.org).
 
+## 0.2.0 - 2026-11-18
+
+### Added
+
+- `tethertrace dev`: live development on a real phone. Watches the project (one native recursive watcher, debounced, `.gitignore`-aware, drops saves that do not change a file), applies each batch of changes with the right mechanism, then checks the app. Flutter: hot reload / hot restart through `flutter run --machine` when Flutter sees the phone, otherwise rebuild + reinstall. React Native: Metro Fast Refresh when Metro is running (reported as not confirmed), native and dependency changes rebuild. Native Android: incremental Gradle build, reinstall, restart.
+- `dev --verify off|smoke|changed|full`; verdicts `passed`, `failed`, `blocked`, `inconclusive`, `not_run` with evidence (app log, screenshot) per update and a suggested next action.
+- `dev status` and `dev stop` work from another terminal; one session per project; an interrupted session is detected and replaced; Ctrl+C stops builds and `flutter run` with its child processes.
+- MCP tools `dev_start` and `dev_stop` (need `--allow-build`, never in `--read-only`), `dev_wait` and `dev_status` (read-only).
+
+### Security
+
+- Windows `.bat`/`.cmd` tools started by `dev` go through `cmd.exe` with quoted arguments and refuse `%`, `!` and newlines, instead of `shell: true`.
+
+### Not in this release
+
+- Clearer build and install errors: a Flutter SDK that Git refuses to read ("dubious ownership") gets the exact `safe.directory` command; an install refused because the phone has a newer or differently signed version says so and never uninstalls on its own.
+
+### Tested
+
+- On a realme RMX3563 (Android 14): Flutter hot reload (edit → "Reloaded 1 of 3147 libraries" → on screen, 8 s), a compile error reported with Flutter's errors, Flutter rebuild mode, and native Android rebuild (2 s incremental) + reinstall. Existing commands and a 20-step flow re-checked. React Native / Metro tested against stand-ins only.
+- Editors that save by writing a temp file and renaming it no longer cause a hot restart instead of a hot reload.
+
+### Not in this release
+
+- No dashboard, no visual regression, no `adb reverse` for Metro.
+
 ## 0.1.3 - 2026-11-14
 
 ### Fixed

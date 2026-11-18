@@ -27,3 +27,7 @@ export { verify, selectFlows, findFlows, globToRegExp, coveredChange, sourceChan
 export { analyzeApk, checkCompatibility, describeAnalysis, describeCompatibility, listZipEntries, readZipEntryData, parseBinaryXml, parseDex, IOS_COMPONENT_MATRIX, type ApkAnalysis, type CompatibilityReport, type AppFramework, type PortabilityRoute, type ZipEntry } from "./analyze.js";
 export { pack, verifyTapp, validateManifest, isSafePackagePath, generateSigningKey, describeTapp, findWebRoot, TappError, TAPP_FORMAT, TAPP_PERMISSIONS, type TappManifest, type VerifiedTapp, type PackResult, type PackConfig, type TappPermission } from "./tapp.js";
 export { startDesktopRuntime, runOnAndroid, convertToApk, ensureAndroidHost, contentSecurityPolicy, injectRuntime, bootScript, mimeOf, runtimeDir, IOS_NOT_IMPLEMENTED, RUNTIME_API, ANDROID_HOST_PACKAGE, ANDROID_HOST_VERSION, type DesktopRuntime, type RuntimePlatform } from "./runtime.js";
+export * from "./dev/watch.js";
+export * from "./dev/session.js";
+export { FlutterRunSession, parseFlutterDevices, matchFlutterDevice, parseDaemonLine } from "./dev/flutter.js";
+export { killTree, which } from "./dev/proc.js";

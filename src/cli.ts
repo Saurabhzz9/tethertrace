@@ -13,6 +13,7 @@ import { explore } from "./explore.js";
 import { startMcpServer } from "./mcp.js";
 import { registerBuildCommands } from "./cli-build.js";
 import { registerVerifyCommands } from "./cli-verify.js";
+import { registerDevCommands } from "./cli-dev.js";
 import { registerUniversalCommands, runUniversal } from "./cli-universal.js";
 import { approve, listApprovals, parseClasses } from "./policy.js";
 import { loadFlow, runFlow } from "./runner.js";
@@ -42,10 +43,15 @@ async function resolveConnectTarget(target?: string) {
   throw new Error(`Several phones found; pick one with --device:\n${found.map((f) => `  ${f.host}:${f.port}  (${f.name})`).join("\n")}`);
 }
 
-async function withDevice<T>(target: string | undefined, fn: (d: Device) => Promise<T>) {
+async function openDevice(target: string | undefined) {
   const key = await loadOrCreateKey();
   const { host, port } = await resolveConnectTarget(target);
   const d = await Device.connect({ host, port, key, onAuthPrompt: () => console.error("Check your phone and tap Allow to trust this computer…") });
+  return Object.assign(d, { address: `${host}:${port}` });
+}
+
+async function withDevice<T>(target: string | undefined, fn: (d: Device) => Promise<T>) {
+  const d = await openDevice(target);
   try {
     return await fn(d);
   } finally {
@@ -419,6 +425,7 @@ program
 registerBuildCommands(program, { withDevice, stamp, deviceOpt });
 registerVerifyCommands(program, { withDevice, stamp, deviceOpt });
 registerUniversalCommands(program, { withDevice, stamp, deviceOpt });
+registerDevCommands(program, { withDevice, stamp, deviceOpt, openDevice });
 
 // ---------------------------------------------------------------- AI agents
 

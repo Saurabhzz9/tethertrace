@@ -160,6 +160,10 @@ export function classifyBuildFailure(output: string): { category: BuildErrorCate
   const pick = (re: RegExp, n = 12) => [...new Set(lines.filter((l) => re.test(l)).map((l) => l.trim()))].slice(0, n);
   const wrong = lines.findIndex((l) => /What went wrong:/.test(l));
   const summary = wrong >= 0 ? lines.slice(wrong + 1, wrong + 8).map((l) => l.trim()).filter((l) => l && !/^\* /.test(l)) : [];
+  if (/detected dubious ownership in repository/.test(output)) {
+    const dir = /dubious ownership in repository at '([^']+)'/.exec(output)?.[1];
+    return { category: "toolchain_missing", hints: [`Git refuses to read ${dir ?? "the Flutter SDK folder"} because another Windows user owns it, so Flutter cannot start. Run once: git config --global --add safe.directory ${dir ?? "<flutter folder>"}`], excerpt: pick(/dubious ownership|Unable to determine engine version/, 3) };
+  }
   if (/SDK location not found|ANDROID_HOME|sdk\.dir/.test(output) && /not found|Define a valid/.test(output))
     return { category: "toolchain_missing", hints: ["No Android SDK was found. Run `tethertrace doctor`, then `tethertrace build --yes` to let it fetch a minimal one."], excerpt: summary };
   if (/licen[cs]e.*not (been )?accepted|Failed to install the following Android SDK packages/i.test(output))

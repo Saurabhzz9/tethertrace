@@ -37,6 +37,8 @@ export const TOOL_CLASSES: Readonly<Record<string, readonly PermissionClass[]>> 
   inspect_project: ["read"],
   toolchain_status: ["read"],
   app_memory: ["read"],
+  dev_status: ["read"],
+  dev_wait: ["read"],
   tap: ["interact"],
   type_text: ["interact"],
   press_key: ["interact"],
@@ -51,10 +53,12 @@ export const TOOL_CLASSES: Readonly<Record<string, readonly PermissionClass[]>> 
   install_apk: ["install"],
   shell: ["execute"],
   build_project: ["execute"],
+  dev_start: ["execute", "install"],
+  dev_stop: ["execute"],
   pair_device: ["sensitive"],
 };
 
-const EXECUTE_FLAG: Record<string, string> = { shell: "--allow-shell", build_project: "--allow-build" };
+const EXECUTE_FLAG: Record<string, string> = { shell: "--allow-shell", build_project: "--allow-build", dev_start: "--allow-build", dev_stop: "--allow-build" };
 
 export class PolicyError extends Error {
   readonly code = "POLICY_DENIED";
@@ -162,7 +166,7 @@ export class Policy {
       // Raw shell cannot be confined to an app, so it is never available in a package-scoped session.
       if (this.scope) return `shell cannot be limited to ${[...this.scope].join(", ")}; it is disabled while --package is set`;
     }
-    if (tool === "build_project" && !this.o.allowBuild) return `build_project needs "execute" permission; start the server with --allow-build`;
+    if ((tool === "build_project" || tool === "dev_start" || tool === "dev_stop") && !this.o.allowBuild) return `${tool} needs "execute" permission; start the server with --allow-build`;
     return undefined;
   }
 

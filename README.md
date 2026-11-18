@@ -49,6 +49,15 @@ It never types, declines permission prompts, never flips switches or checkboxes,
 
 Works with native Views, Jetpack Compose, Flutter and React Native, because it tests the built app, not your source code.
 
+## New in 0.2: live development on your phone
+
+```bash
+tethertrace dev                    # build + install once, then update the phone on every save
+tethertrace dev --verify changed   # also re-run the flows that cover what you changed
+```
+
+Save a file and the change is on your phone: Flutter hot reload (through `flutter run`, when Flutter can see the phone), Metro Fast Refresh for React Native, or an incremental Gradle build + reinstall. Then tethertrace checks the running app for crashes and ANRs, optionally runs your flows, and prints a verdict with evidence. It always says which mechanism was used and never reports an update it could not confirm as passed. AI agents get the same loop through MCP (`dev_start`, `dev_wait`, `dev_status`, `dev_stop`). Details and limits: **[docs/dev.md](docs/dev.md)**.
+
 ## No APK yet? Build it too
 
 ```bash
@@ -284,6 +293,7 @@ Or skip the code and give an agent the MCP server (above): it gets the same powe
 | `pair [host:port] <code>` | Pair once with the 6-digit code |
 | `info` | Model, Android version, ABI |
 | `apps` · `apk-info <apk>` | Installed apps · package/version of an APK |
+| `dev` · `dev status` · `dev stop` | Live development: watch the project, apply each change to the phone, check the app ([docs/dev.md](docs/dev.md)) |
 | `build` · `toolchain list` · `toolchain clean` | Build the project (`--install`, `--test`, `--json`) · show or delete what tethertrace downloaded |
 | `install <apk>` · `launch <pkg>` · `stop <pkg>` | Install over Wi-Fi (streamed, with progress for large APKs) · cold start with launch time · force-stop |
 | `screenshot` · `ui` · `logs <pkg>` | Screen PNG · on-screen elements · one app's logcat |
