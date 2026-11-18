@@ -296,6 +296,7 @@ test("build failures are sorted into categories with the lines that matter", () 
   assert.equal(c("* What went wrong:\nUnsupported class file major version 67"), "jdk_incompatible");
   assert.equal(c("* What went wrong:\nCould not resolve com.squareup.okhttp3:okhttp:4.12.0.\n > Could not GET 'https://repo.maven.apache.org/...'"), "dependency_download_failed");
   assert.match(classifyBuildFailure("No cached version of com.x:y:1 available for offline mode.\nCould not resolve com.x:y:1").hints[0], /without --offline/);
+  assert.match(classifyBuildFailure("fatal: detected dubious ownership in repository at 'C:/flutter'\nError: Unable to determine engine version...").hints[0], /safe\.directory C:\/flutter/);
   assert.equal(c("java.io.IOException: No space left on device"), "out_of_disk");
   // A dead IPv6 route makes Java time out on downloads that work over IPv4: retried once, never twice.
   const timedOut = 'Exception in thread "main" java.net.ConnectException: Connection timed out: connect';

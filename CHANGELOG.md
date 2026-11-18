@@ -2,7 +2,7 @@
 
 All notable changes are listed here. The project follows [Semantic Versioning](https://semver.org).
 
-## 0.2.0 - unreleased
+## 0.2.0 - 2026-11-18
 
 ### Added
 
@@ -17,7 +17,15 @@ All notable changes are listed here. The project follows [Semantic Versioning](h
 
 ### Not in this release
 
-- No dashboard, no visual regression, no `adb reverse` for Metro. Flutter hot reload and Metro have been tested against scripted stand-ins, not yet on a real phone.
+- Clearer build and install errors: a Flutter SDK that Git refuses to read ("dubious ownership") gets the exact `safe.directory` command; an install refused because the phone has a newer or differently signed version says so and never uninstalls on its own.
+
+### Tested
+
+- `dev` rebuild mode on a realme RMX3563 (Android 14) with a Flutter app: edit → rebuild → reinstall → crash check passed. Flutter hot reload and Metro were tested against scripted stand-ins only.
+
+### Not in this release
+
+- No dashboard, no visual regression, no `adb reverse` for Metro.
 
 ## 0.1.3 - 2026-11-14
 

@@ -101,5 +101,16 @@ inside tethertrace: each `dev_wait` reports one update.
 - No dashboard (`tethertrace dashboard`) yet.
 - No visual regression comparison.
 - No `adb reverse` for Metro (needs the phone to open connections back over ADB).
-- Real-device runs of `dev` with Flutter hot reload and Metro have not been done by the maintainers yet;
-  the Flutter protocol is tested against a scripted stand-in for `flutter run --machine`.
+- Flutter hot reload and Metro have not been run on a real phone yet; the Flutter protocol is tested
+  against a scripted stand-in for `flutter run --machine`.
+
+## Tested on a real phone
+
+realme RMX3563, Android 14, over Wi-Fi from Windows 11 (Node 24), with a Flutter app (rebuild mode,
+because `adb` was not installed so Flutter could not see the phone):
+
+- first deploy: `flutter build apk --debug` (612 s cold), install; an older-version install was refused
+  by Android (`INSTALL_FAILED_VERSION_DOWNGRADE`) and reported as FAILED with what to do;
+- editing `lib/main.dart`: one rebuild (191 s incremental Gradle), reinstall, restart, app alive, no
+  crash: PASSED, screenshot saved;
+- `dev stop` from another terminal, and detection of a killed session as interrupted.

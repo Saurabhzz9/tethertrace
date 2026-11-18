@@ -212,12 +212,9 @@ export function cycleVerdict(c: Pick<CycleRecord, "update" | "health" | "verific
 }
 
 export function describeCycle(c: CycleRecord): string {
-  const L = [`#${c.n} ${c.changes.count} change(s): ${c.changes.files.slice(0, 3).join(", ")}${c.changes.count > 3 ? ", …" : ""}`];
+  const L = [c.changes.count ? `#${c.n} ${c.changes.count} change(s): ${c.changes.files.slice(0, 3).join(", ")}${c.changes.count > 3 ? ", …" : ""}` : `#${c.n} first deploy`];
   L.push(`  Update: ${c.mechanism}${c.mechanism !== c.plan.mechanism ? ` (planned ${c.plan.mechanism})` : ""} — ${c.update.ok ? (c.update.confirmed ? "applied" : "sent, not confirmed") : "FAILED"}: ${c.update.message}`);
-  if (c.build?.error) {
-    for (const l of c.build.error.excerpt.slice(0, 8)) L.push(`    ${l}`);
-    for (const h of c.build.error.hints) L.push(`  → ${h}`);
-  }
+  if (c.build?.error) for (const l of c.build.error.excerpt.slice(0, 8)) L.push(`    ${l}`);
   if (c.health) L.push(`  App health: ${c.health.verdict} — ${c.health.reason}`);
   for (const e of c.health?.evidence.slice(0, 5) ?? []) L.push(`    ${e}`);
   if (c.verification) {
@@ -526,6 +523,8 @@ export class DevSession {
 
 function nextAction(c: CycleRecord): string | undefined {
   if (c.build?.error) return c.build.error.hints[0] ?? `Fix the ${c.build.error.category} error above, then save again.`;
+  if (/INSTALL_FAILED_VERSION_DOWNGRADE/.test(c.update.message)) return "The phone has a newer version of this app (higher versionCode). Raise versionCode in the build, or uninstall the app on the phone yourself (this deletes its data); tethertrace never uninstalls on its own.";
+  if (/INSTALL_FAILED_UPDATE_INCOMPATIBLE/.test(c.update.message)) return "The installed app is signed with a different key (e.g. a Play Store build). Uninstall it on the phone yourself (this deletes its data) to install this build.";
   if (!c.update.ok) return "Fix the error above and save again; the session keeps watching.";
   if (c.health?.verdict === "app_crash") return "Open the crash lines in app.log; the first 'Caused by' names the failing code.";
   if (c.health?.verdict === "anr") return "The main thread is blocked; look for slow work on the UI thread in the changed files.";
