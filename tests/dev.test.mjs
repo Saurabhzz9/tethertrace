@@ -67,6 +67,7 @@ test("watcher: a burst of saves is one batch; unchanged rewrites and ignored fol
     await sleep(400);
     assert.equal(batches.length, 1, JSON.stringify(batches));
     assert.deepEqual(batches[0].map((c) => c.path).sort(), ["lib/a.dart", "lib/b.dart"]);
+    assert.ok(batches[0].every((c) => c.event === "modified"), "files that existed before the watch are modified, not added");
 
     await writeFile(join(dir, "lib/a.dart"), "a9"); // same bytes as last time
     await sleep(500);

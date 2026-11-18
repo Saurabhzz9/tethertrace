@@ -1,5 +1,5 @@
 import { watch as fsWatch, type FSWatcher } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { globToRegExp } from "../verify.js";
@@ -92,6 +92,7 @@ export class ProjectWatcher {
       /* no .gitignore */
     }
     for (const g of this.o.ignore ?? []) this.extra.push(globToRegExp(g));
+    await this.baseline();
     this.watcher = fsWatch(this.root, { recursive: true, persistent: true }, (_ev, name) => {
       if (!name || this.closed) return;
       const rel = name.toString().split(sep).join("/");
@@ -101,6 +102,37 @@ export class ProjectWatcher {
       this.timer = setTimeout(() => void this.flush(), this.o.debounceMs ?? 250);
     });
     this.watcher.on("error", (e) => this.o.onError?.(e));
+  }
+
+  /**
+   * Record size and modification time of every watched file before watching. Some file systems
+   * (macOS FSEvents) deliver events from just before the watch began; with a baseline those files
+   * are recognised as unchanged, and a later edit is reported as "modified", not "added".
+   */
+  private async baseline(limit = 50_000) {
+    const walk = async (rel: string): Promise<void> => {
+      if (this.hashes.size >= limit) return;
+      let entries;
+      try {
+        entries = await readdir(join(this.root, rel), { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of entries) {
+        const r = rel ? `${rel}/${e.name}` : e.name;
+        if (e.isDirectory()) {
+          if (!IGNORED_DIRS.has(e.name) && !this.extra.some((x) => x.test(r))) await walk(r);
+        } else if (e.isFile() && !isIgnored(r, this.extra)) {
+          try {
+            const st = await stat(join(this.root, r));
+            this.hashes.set(r, `stat:${st.size}:${st.mtimeMs}`);
+          } catch {
+            /* gone */
+          }
+        }
+      }
+    };
+    await walk("");
   }
 
   /** Remember a file's current content so an unchanged rewrite is not reported. */
@@ -120,9 +152,16 @@ export class ProjectWatcher {
     this.pending.clear();
     const changes: FileChange[] = [];
     for (const rel of names) {
-      const d = await this.digest(join(this.root, rel));
+      const abs = join(this.root, rel);
+      let before = this.hashes.get(rel);
+      if (before?.startsWith("stat:")) {
+        // Known from the baseline: unchanged if size and time match, otherwise compare by content from now on.
+        const st = await stat(abs).catch(() => undefined);
+        if (st && before === `stat:${st.size}:${st.mtimeMs}`) continue;
+        before = "baseline";
+      }
+      const d = await this.digest(abs);
       if (d === null) continue; // a folder
-      const before = this.hashes.get(rel);
       if (d === undefined) {
         // Created and removed within one debounce window (an editor's or sed's temp file): not a change.
         if (before === undefined) continue;
