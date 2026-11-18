@@ -34,6 +34,8 @@
     { "name": "inspect_project", "state": "inherit" },
     { "name": "toolchain_status", "state": "inherit" },
     { "name": "app_memory", "state": "inherit" },
+    { "name": "dev_status", "state": "inherit" },
+    { "name": "dev_wait", "state": "inherit" },
     { "name": "tap", "state": "review" },
     { "name": "type_text", "state": "review" },
     { "name": "press_key", "state": "review" },
@@ -47,6 +49,8 @@
     { "name": "verify_app", "state": "review" },
     { "name": "install_apk", "state": "review" },
     { "name": "build_project", "state": "review" },
+    { "name": "dev_start", "state": "review" },
+    { "name": "dev_stop", "state": "review" },
     { "name": "pair_device", "state": "review" },
     { "name": "shell", "state": "block" },
     { "name": "other", "state": "review" }
@@ -60,7 +64,7 @@
   "saferAlternatives": [
     "Start the server with tethertrace mcp --read-only: only the tools that look at the phone are listed, and nothing can tap, type, install, build or run a shell.",
     "Start it with --package com.example.app: the server checks which app is in front before every read and every touch, and refuses when it is another app or it cannot tell.",
-    "Leave --allow-shell and --allow-build off (the default); the shell and build_project tools are then not listed at all.",
+    "Leave --allow-shell and --allow-build off (the default); the shell, build_project and dev_start/dev_stop tools are then not listed at all.",
     "Use --confirm interact,install so the server itself asks a person before each such call, and read ~/.tethertrace/audit.jsonl to see what was done.",
     "These defaults match a server started as the tethertrace command. Started another way (for example node dist/cli.js mcp), it keeps Guard's normal handling."
   ]

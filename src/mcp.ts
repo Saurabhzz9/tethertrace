@@ -22,6 +22,7 @@ import { formatNodes, smoke } from "./smoke.js";
 import { listMemories, loadMemory } from "./memory.js";
 import { describeVerify, findFlows, verify } from "./verify.js";
 import { VERSION } from "./version.js";
+import { DevSession, describeCycle, readHistory, readSnapshot, type CycleRecord } from "./dev/session.js";
 
 export interface McpOptions {
   /** host:port; auto-discovered over mDNS when omitted. */
@@ -139,7 +140,11 @@ export function createMcpServer(key: AdbKey, o: McpOptions = {}) {
   const stamp = () => new Date().toISOString().replace(/[:.]/g, "-");
   const server = new McpServer({ name: "tethertrace", version: VERSION });
   // Drop the phone connection when the client goes away, so nothing lingers.
-  server.server.onclose = () => session.close();
+  let dev: DevSession | undefined;
+  server.server.onclose = () => {
+    void dev?.stop("MCP client disconnected");
+    session.close();
+  };
 
   // Ask the person through the client when it supports that, otherwise through a local file that
   // they approve from a terminal (`tethertrace approve <id>`).
@@ -654,6 +659,107 @@ export function createMcpServer(key: AdbKey, o: McpOptions = {}) {
       return { content: [{ type: "text" as const, text: JSON.stringify(r, null, 2) }], isError: !r.ok };
     },
   );
+
+  // Live development. The session runs inside this server and ends with it; at most one at a time.
+  const devText = (s: DevSession) => {
+    const sn = s.snap;
+    return [`Dev session: ${sn.state}  project ${sn.project?.name} (${sn.project?.kind})  mode ${sn.mode}  app ${sn.pkg ?? "?"}  verify ${sn.verify}  updates ${sn.cycles}${sn.queued ? `  queued ${sn.queued}` : ""}`, ...sn.notes.map((n) => `note: ${n}`), ...(sn.last ? ["", describeCycle(sn.last)] : [])].join("\n");
+  };
+  tool(
+    "dev_start",
+    {
+      description:
+        "Start a live development session for the app project in a folder: build and install it once, then watch the source and apply each saved change to the phone (Flutter hot reload when Flutter sees the phone, Metro Fast Refresh for React Native when Metro runs, otherwise rebuild + reinstall), and check the app after each update (crash/ANR, optionally flows). Enabled with --allow-build. Returns after the first deploy; then edit a file and call dev_wait for the result, dev_status for the state, dev_stop to end.",
+      inputSchema: {
+        dir: z.string().optional().describe("project folder (default: server's working folder)"),
+        package: z.string().optional().describe("application id; required when the server is limited with --package"),
+        verify: z.enum(["off", "smoke", "changed", "full"]).optional().describe("after each update: smoke (default) checks the app stays up; changed/full also run flows"),
+        module: z.string().optional(),
+        variant: z.string().optional(),
+      },
+      annotations: { ...act, openWorldHint: true },
+    },
+    { pkg: (a) => a.package, summary: (a) => `start live development for ${resolve(a.dir ?? ".")} (runs its build and installs the app on the phone after each change)`, detail: (a) => resolve(a.dir ?? ".") },
+    async (a, pkg) => {
+      if (dev && dev.snap.state !== "stopped") throw new Error(`A dev session is already running for ${dev.root}; call dev_stop first.`);
+      if (policy.scoped && !pkg) throw new PolicyError("This server is limited to specific apps; pass package");
+      const s = new DevSession({
+        dir: resolve(a.dir ?? "."),
+        pkg,
+        verify: a.verify ?? "smoke",
+        module: a.module,
+        variant: a.variant,
+        deviceAddress: o.device,
+        // Share the server's phone connection; the dev session must not close it.
+        connect: async () => {
+          const d = await session.get();
+          return new Proxy(d, {
+            get: (t, p) => {
+              if (p === "close") return () => undefined;
+              const v = Reflect.get(t, p) as unknown;
+              return typeof v === "function" ? (v as (...x: unknown[]) => unknown).bind(t) : v;
+            },
+          });
+        },
+        log: (m) => console.error(m),
+      });
+      try {
+        await s.start();
+      } catch (e) {
+        await s.stop("could not start");
+        throw e;
+      }
+      dev = s;
+      return text(devText(s));
+    },
+  );
+
+  tool(
+    "dev_status",
+    {
+      description: "State of the live development session: mode (hot reload / Metro / rebuild), last update with its verdict (passed, failed, blocked, inconclusive, not_run), build errors, crash evidence and a suggested next action. With dir, reads the session of that project even when another tethertrace process runs it.",
+      inputSchema: { dir: z.string().optional(), history: z.number().int().min(0).max(20).optional().describe("also return this many earlier updates") },
+      annotations: ro,
+    },
+    {},
+    async ({ dir, history }) => {
+      if (dev && (!dir || resolve(dir) === dev.root)) {
+        const h = history ? dev.history.slice(-history - 1, -1) : [];
+        return text([devText(dev), ...h.reverse().map((c) => `\n${describeCycle(c)}`)].join("\n"));
+      }
+      const root = resolve(dir ?? ".");
+      const sn = await readSnapshot(root);
+      if (!sn) return text(`No dev session has run for ${root}.`);
+      const h = await readHistory(root, (history ?? 0) + 1);
+      return text([`Dev session for ${root}: ${sn.stale ? "not running (interrupted)" : sn.state}  mode ${sn.mode}  app ${sn.pkg ?? "?"}  updates ${sn.cycles}`, ...h.reverse().map((c) => `\n${describeCycle(c)}`)].join("\n"));
+    },
+  );
+
+  tool(
+    "dev_wait",
+    {
+      description: "Wait for the next update of the running dev session (after you edit a source file) and return its result as JSON: mechanism used, whether it was applied and confirmed, build error, app health, flow results, evidence paths, verdict. Returns verdict not_run if nothing was applied before the timeout.",
+      inputSchema: { timeoutSeconds: z.number().min(1).max(600).optional().describe("default 120") },
+      annotations: ro,
+    },
+    {},
+    async ({ timeoutSeconds }) => {
+      const s = dev;
+      if (!s || s.snap.state === "stopped") throw new Error("No dev session is running in this server; call dev_start first.");
+      const from = s.snap.cycles;
+      const deadline = Date.now() + (timeoutSeconds ?? 120) * 1000;
+      while (Date.now() < deadline && s.snap.cycles === from && (s.snap.state as string) !== "stopped") await new Promise((r) => setTimeout(r, 250));
+      const c: CycleRecord | undefined = s.snap.cycles > from ? s.snap.last : undefined;
+      if (!c) return text(JSON.stringify({ verdict: "not_run", reason: (s.snap.state as string) === "stopped" ? "the session stopped" : `no change was applied within ${timeoutSeconds ?? 120} s`, state: s.snap.state }, null, 2));
+      return { content: [{ type: "text" as const, text: JSON.stringify(c, null, 2) }], isError: c.verdict === "failed" || c.verdict === "blocked" };
+    },
+  );
+
+  tool("dev_stop", { description: "Stop the live development session started with dev_start (stops the watcher, Flutter's process and any build).", inputSchema: {}, annotations: act }, { summary: () => "stop the live development session" }, async () => {
+    if (!dev || dev.snap.state === "stopped") return text("No dev session is running.");
+    await dev.stop("dev_stop");
+    return text(`Stopped after ${dev.snap.cycles} update(s).`);
+  });
 
   // A ready-made prompt so any MCP client can ask its model to write a flow for the app being built.
   server.registerPrompt(
