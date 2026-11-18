@@ -184,3 +184,7 @@ Every decision is appended to `~/.tethertrace/audit.jsonl` (`TETHERTRACE_HOME` m
 - "Open the app, go to Settings → Account, and check the delete-account button is there."
 - "Run `flows/checkout.yaml`. If it fails, read the app logs and tell me the likely cause."
 - "Write a YAML flow for the onboarding screens you just walked through."
+
+## Live development tools
+
+`dev_start`, `dev_wait`, `dev_status`, `dev_stop`: see [dev.md](dev.md#from-an-ai-agent-mcp). `dev_start` and `dev_stop` are listed only with `--allow-build`.

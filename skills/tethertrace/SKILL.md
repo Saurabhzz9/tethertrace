@@ -27,6 +27,7 @@ Never guess or reuse a pairing code. Only the user can read it from their phone.
 |---|---|
 | What is in this folder and can it be built here | `tethertrace doctor` |
 | Build the app from source (native Android, Flutter, React Native) | `tethertrace build` (debug APK). Add `--test` to install and explore it, `--json` for a machine-readable result |
+| See each code change on the phone while developing, checked for crashes | `tethertrace dev` (runs until Ctrl+C; `dev status` / `dev stop` from another terminal). Over MCP: `dev_start`, edit a file, then `dev_wait` for the verdict. Say which mechanism it reports (hot reload, Metro, reinstall); a Metro update is "not confirmed" |
 | "Does my APK work?" with no test written | `tethertrace test app.apk` (installs, explores, catches crashes, writes flows) |
 | Install, cold start and a quick crash check | `tethertrace smoke --apk app.apk` |
 | A repeatable test for a specific path | Write a YAML flow (section 3), then `tethertrace run flow.yaml` |
