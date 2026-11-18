@@ -124,6 +124,8 @@ export class ProjectWatcher {
       if (d === null) continue; // a folder
       const before = this.hashes.get(rel);
       if (d === undefined) {
+        // Created and removed within one debounce window (an editor's or sed's temp file): not a change.
+        if (before === undefined) continue;
         this.hashes.delete(rel);
         changes.push({ path: rel, event: "deleted", kind: classifyChange(rel) });
       } else if (d.h !== before) {

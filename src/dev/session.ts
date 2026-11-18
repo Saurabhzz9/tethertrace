@@ -38,7 +38,8 @@ export function planUpdate(mode: DevMode, changes: FileChange[]): UpdatePlan {
   const isCode = (c: FileChange) => /\.(dart|[cm]?[jt]sx?)$/.test(c.path);
   if (mode === "flutter-daemon") {
     if (heavy.length) return { mechanism: "reinstall", reason: `${heavy[0]!.path} (${heavy[0]!.kind}) is not applied by hot reload; rebuilding` };
-    if (changes.some((c) => c.event !== "modified" && isCode(c))) return { mechanism: "hot-restart", reason: "files were added or removed; hot restart reloads the whole Dart program" };
+    // "added" includes editors' atomic saves (write a temp file, rename over the original), so only a deletion forces a restart.
+    if (changes.some((c) => c.event === "deleted" && isCode(c))) return { mechanism: "hot-restart", reason: "a Dart file was removed; hot restart reloads the whole program" };
     return { mechanism: "hot-reload", reason: "Dart/asset change; Flutter hot reload keeps app state" };
   }
   if (mode === "metro") {
@@ -354,7 +355,7 @@ export class DevSession {
       n,
       startedAt: new Date(t0).toISOString(),
       durationMs: 0,
-      changes: { count: changes.length, files: changes.map((c) => `${c.event === "modified" ? "" : `${c.event} `}${c.path}`), kinds },
+      changes: { count: changes.length, files: changes.map((c) => `${c.event === "deleted" ? "deleted " : ""}${c.path}`), kinds },
       plan,
       mechanism: plan.mechanism,
       update: { ok: false, confirmed: false, message: "" },
@@ -415,7 +416,7 @@ export class DevSession {
       }
       let r = await this.flutter.restart(rec.plan.mechanism === "hot-restart");
       rec.mechanism = rec.plan.mechanism;
-      if (!r.ok && rec.plan.mechanism === "hot-reload" && r.restartRecommended) {
+      if (!r.ok && rec.plan.mechanism === "hot-reload" && this.flutter.running) {
         this.log(`Hot reload not possible (${r.message}); trying hot restart.`);
         r = await this.flutter.restart(true);
         rec.mechanism = "hot-restart";

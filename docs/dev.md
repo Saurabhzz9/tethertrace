@@ -101,8 +101,7 @@ inside tethertrace: each `dev_wait` reports one update.
 - No dashboard (`tethertrace dashboard`) yet.
 - No visual regression comparison.
 - No `adb reverse` for Metro (needs the phone to open connections back over ADB).
-- Flutter hot reload and Metro have not been run on a real phone yet; the Flutter protocol is tested
-  against a scripted stand-in for `flutter run --machine`.
+- Metro / React Native has not been run on a real phone yet.
 
 ## Tested on a real phone
 
@@ -114,3 +113,17 @@ because `adb` was not installed so Flutter could not see the phone):
 - editing `lib/main.dart`: one rebuild (191 s incremental Gradle), reinstall, restart, app alive, no
   crash: PASSED, screenshot saved;
 - `dev stop` from another terminal, and detection of a killed session as interrupted.
+
+Flutter hot reload, same phone, after `adb connect` (adb from the Android SDK, using tethertrace's
+key through `ADB_VENDOR_KEYS`, so no second pairing):
+
+- `flutter run --machine` deploy (99 s warm), then a text edit: hot reload "Reloaded 1 of 3147
+  libraries", new text on screen, PASSED in 8.4 s (4 s of it is the crash-check wait);
+- a syntax error: FAILED with Flutter's compiler errors; fixing it: hot reload, PASSED;
+- `dev stop` left no `flutter`/`dart` processes behind.
+
+Native Android (`examples/android-hello`, Java): first build 140 s, then an edit rebuilt in 2 s,
+reinstalled and restarted, new text on screen, PASSED.
+
+Existing commands re-checked on the phone after these changes: `info`, `apps`, `smoke`, `screenshot`,
+`ui`, `tap`, and a 20-step YAML flow across six tabs (passed).

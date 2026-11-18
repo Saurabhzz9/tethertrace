@@ -21,7 +21,8 @@ All notable changes are listed here. The project follows [Semantic Versioning](h
 
 ### Tested
 
-- `dev` rebuild mode on a realme RMX3563 (Android 14) with a Flutter app: edit → rebuild → reinstall → crash check passed. Flutter hot reload and Metro were tested against scripted stand-ins only.
+- On a realme RMX3563 (Android 14): Flutter hot reload (edit → "Reloaded 1 of 3147 libraries" → on screen, 8 s), a compile error reported with Flutter's errors, Flutter rebuild mode, and native Android rebuild (2 s incremental) + reinstall. Existing commands and a 20-step flow re-checked. React Native / Metro tested against stand-ins only.
+- Editors that save by writing a temp file and renaming it no longer cause a hot restart instead of a hot reload.
 
 ### Not in this release
 

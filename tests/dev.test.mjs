@@ -76,6 +76,12 @@ test("watcher: a burst of saves is one batch; unchanged rewrites and ignored fol
     assert.ok(await until(() => batches.length === 2));
     assert.deepEqual(batches[1], [{ path: "lib/b.dart", event: "deleted", kind: "source" }]);
 
+    // An editor's temp file that comes and goes within one debounce is not reported.
+    await writeFile(join(dir, "lib/sedAB12"), "x");
+    await rm(join(dir, "lib/sedAB12"));
+    await sleep(500);
+    assert.equal(batches.length, 2, JSON.stringify(batches.slice(2)));
+
     await rename(join(dir, "lib/a.dart"), join(dir, "lib/c.dart"));
     assert.ok(await until(() => batches.length === 3));
     const ev = Object.fromEntries(batches[2].map((c) => [c.path, c.event]));
@@ -113,7 +119,8 @@ test("coalescing queue never overlaps jobs and merges changes that arrive during
 test("update plan: hot reload only for Dart edits; Metro only for JS; native and dependency changes rebuild", () => {
   const ch = (path, event = "modified") => ({ path, event, kind: classifyChange(path) });
   assert.equal(planUpdate("flutter-daemon", [ch("lib/main.dart")]).mechanism, "hot-reload");
-  assert.equal(planUpdate("flutter-daemon", [ch("lib/new.dart", "added")]).mechanism, "hot-restart");
+  assert.equal(planUpdate("flutter-daemon", [ch("lib/new.dart", "added")]).mechanism, "hot-reload", "atomic saves look like adds");
+  assert.equal(planUpdate("flutter-daemon", [ch("lib/old.dart", "deleted")]).mechanism, "hot-restart");
   assert.equal(planUpdate("flutter-daemon", [ch("lib/main.dart"), ch("pubspec.yaml")]).mechanism, "reinstall");
   assert.equal(planUpdate("flutter-daemon", [ch("android/app/src/main/AndroidManifest.xml")]).mechanism, "reinstall");
   assert.equal(planUpdate("metro", [ch("src/App.tsx")]).mechanism, "metro");

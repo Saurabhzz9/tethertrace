@@ -142,9 +142,10 @@ export class FlutterRunSession {
   /** Hot reload (fullRestart false) or hot restart (true). Success only when Flutter answers code 0. */
   async restart(fullRestart: boolean): Promise<ReloadResult> {
     if (!this.appId) return { ok: false, message: "Flutter has not reported the app id yet" };
+    this.tail.length = 0; // report only what Flutter says about this update
     const r = await this.request("app.restart", { appId: this.appId, fullRestart, pause: false, reason: "manual" });
     if (r.error !== undefined) return { ok: false, message: typeof r.error === "string" ? r.error : JSON.stringify(r.error) };
-    const message = r.message ?? (r.code === 0 ? "done" : `code ${r.code}`);
+    const message = r.message || (r.code === 0 ? (fullRestart ? "hot restart done" : "hot reload done") : `code ${r.code}`);
     return { ok: r.code === 0, message, restartRecommended: r.code !== 0 && /restart/i.test(message) };
   }
 
