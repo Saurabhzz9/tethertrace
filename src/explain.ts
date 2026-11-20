@@ -85,6 +85,8 @@ const NEXT_STEPS: Record<string, string> = {
   app_exited: "Next: the process disappeared without a crash report. Check logcat.txt for 'Killing' / low-memory messages or an explicit exit.",
   device_disconnected: "Next: the phone dropped off Wi-Fi or Wireless debugging turned off. Re-run; if it repeats, keep the screen on and stay on the same network.",
   timeout: "Next: the device stopped answering. Re-run; if it repeats, reboot the phone.",
+  screen_locked: "Next: the phone was locked (or its screen off) when the step needed the app. tethertrace wakes the screen and dismisses a lock screen without a PIN, but never enters a PIN, pattern or password. Unlock the phone, or for test phones set Screen lock to None/Swipe and raise the screen timeout.",
+  ui_unavailable: "Next: Android could not read the screen's elements. A playing video or endless animation keeps uiautomator from finishing (\"could not get idle state\"); pause the video or wait for a still screen in the flow. Secure screens (FLAG_SECURE) cannot be read at all.",
 };
 
 const SYSTEM = `You are a senior Android engineer reviewing an automated real-device test report produced by tethertrace.

@@ -2,6 +2,18 @@
 
 All notable changes are listed here. The project follows [Semantic Versioning](https://semver.org).
 
+## 0.2.1 - 2026-11-20
+
+### Fixed
+
+- A locked or dark screen no longer shows up as "element not found" after a long wait. Runs, `smoke` and `explore` wake the screen and dismiss a lock screen that has no PIN, pattern or password; a real lock fails at once as `screen_locked`, and tethertrace never enters a lock code. Reading the screen never wakes or unlocks the phone. Checked on a realme RMX3563 (Android 14) with a PIN.
+- An "is gone" check (`assertNotVisible`) can no longer pass because the lock screen hid everything.
+- A screen uiautomator cannot read (a playing video or endless animation) fails as `ui_unavailable` with uiautomator's own message, instead of `unknown`.
+- A step that times out because the phone dropped off Wi-Fi is reported as `device_disconnected` (checked with a quick round trip), and evidence collection no longer waits for every read to time out.
+- If the phone is lost after every step passed, the report is still written, with a note that the crash check after the run was not done (before, only `steps.jsonl` was kept).
+- `explore` reports a lost connection as `device_disconnected` instead of "UI unavailable", and stops with `screen_locked` when it cannot get past a lock.
+- `verify` marks flows after a lost connection as not run and still writes its summary.
+
 ## 0.2.0 - 2026-11-18
 
 ### Added

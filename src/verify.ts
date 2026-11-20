@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import YAML from "yaml";
+import { AdbError } from "./adb/connection.js";
 import { assertPackage, type Device } from "./device.js";
 import { explore, type ExploreSummary } from "./explore.js";
 import {
@@ -224,7 +225,12 @@ export async function verify(d: Device, o: VerifyOptions): Promise<VerifySummary
   await mkdir(o.outDir, { recursive: true });
 
   const results: VerifyFlowResult[] = [];
+  let lost: string | undefined;
   for (const dec of decisions) {
+    if (lost && dec.run) {
+      results.push({ ...dec, status: "not_run", reason: lost });
+      continue;
+    }
     if (!dec.run) {
       results.push({ ...dec, status: "not_run" });
       continue;
@@ -233,7 +239,16 @@ export async function verify(d: Device, o: VerifyOptions): Promise<VerifySummary
     log(`\nFlow ${f.flow.name}: ${dec.reason}`);
     const report = join(o.outDir, `flow-${results.length + 1}-${f.flow.name.replace(/[^\w-]/g, "_")}`).split(sep).join("/");
     const before = flowRecord(memory, f.file)?.runs.findLast((r) => r.build !== build.id);
-    const s = await runFlow(d, f.flow, { outDir: report, log, beforeAction: o.beforeAction });
+    let s: Awaited<ReturnType<typeof runFlow>>;
+    try {
+      s = await runFlow(d, f.flow, { outDir: report, log, beforeAction: o.beforeAction });
+    } catch (e) {
+      // The phone went away before this flow could start: it and every flow after it were not run.
+      if (!(e instanceof AdbError && (e.code === "CLOSED" || e.code === "TIMEOUT"))) throw e;
+      lost = `Lost the phone: ${e.message}`;
+      results.push({ ...dec, status: "not_run", reason: lost });
+      continue;
+    }
     rememberFlowRun(memory, { file: f.file, name: f.flow.name, covers: f.covers, sha256: f.sha256 }, build.id, s, report);
     results.push({
       ...dec,
@@ -247,7 +262,8 @@ export async function verify(d: Device, o: VerifyOptions): Promise<VerifySummary
 
   let exploration: VerifySummary["exploration"];
   const wantExplore = o.explore ?? (o.mode !== "changed" || isNew || memory.explorations.length === 0);
-  if (wantExplore) {
+  if (lost) notes.push(`${lost}. Flows after that were not run and the app was not explored.`);
+  else if (wantExplore) {
     const report = join(o.outDir, "explore").split(sep).join("/");
     log(`\nExploring ${o.pkg}…`);
     const s = await explore(d, { pkg: o.pkg, outDir: report, maxActions: o.maxActions ?? (o.mode === "changed" ? 25 : 40), timeBudgetMs: o.timeBudgetMs, log });

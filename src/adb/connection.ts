@@ -27,7 +27,7 @@ import { SocketReader } from "./reader.js";
 
 export class AdbError extends Error {
   constructor(
-    readonly code: "CONNECT" | "AUTH_REJECTED" | "AUTH_TIMEOUT" | "TLS_REJECTED" | "PROTOCOL" | "STREAM_REFUSED" | "CLOSED" | "TIMEOUT",
+    readonly code: "CONNECT" | "AUTH_REJECTED" | "AUTH_TIMEOUT" | "TLS_REJECTED" | "PROTOCOL" | "STREAM_REFUSED" | "CLOSED" | "TIMEOUT" | "UI_UNAVAILABLE",
     message: string,
   ) {
     super(message);
