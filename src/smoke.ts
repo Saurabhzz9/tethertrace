@@ -94,6 +94,9 @@ export async function smoke(d: Device, o: SmokeOptions): Promise<SmokeSummary> {
   };
 
   try {
+    // Wake the screen / dismiss a lock screen without a PIN, so the screenshot shows the app. Best effort.
+    const screen = await d.ensureScreenReady().catch((e: Error) => `not ready: ${e.message}`);
+    if (screen !== "ready" && screen !== "unknown") log(`Screen: ${screen}`);
     if (o.apk) {
       const mb = ((await stat(o.apk)).size / 1e6).toFixed(1);
       log(`Installing ${o.apk} (${mb} MB) over Wi-Fi…`);

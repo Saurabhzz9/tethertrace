@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile, appendFile } from "node:fs/promises";
 import { join } from "node:path";
 import YAML from "yaml";
 import { AdbError } from "./adb/connection.js";
-import { assertPackage, describe, SelectorError, visibleLabels, type Device, type Selector } from "./device.js";
+import { assertPackage, describe, ScreenStateError, SelectorError, visibleLabels, type Device, type Selector } from "./device.js";
 import { classify, filterAppLog, formatNodes } from "./smoke.js";
 
 /**
@@ -25,7 +25,7 @@ import { classify, filterAppLog, formatNodes } from "./smoke.js";
  *     - back
  */
 
-export type FailureCategory = "element_not_found" | "assertion_failed" | "ambiguous_selector" | "app_crash" | "anr" | "app_exited" | "device_disconnected" | "timeout" | "unsupported_step" | "unknown";
+export type FailureCategory = "element_not_found" | "assertion_failed" | "ambiguous_selector" | "app_crash" | "anr" | "app_exited" | "device_disconnected" | "screen_locked" | "ui_unavailable" | "timeout" | "unsupported_step" | "unknown";
 
 export interface StepRecord {
   index: number;
@@ -46,6 +46,8 @@ export interface RunSummary {
   startedAt: string;
   status: "passed" | "failed";
   failure?: { step: number; category: FailureCategory; message: string; evidence: string[]; visibleOnScreen?: string[] };
+  /** Things that were not checked, and why. */
+  warnings?: string[];
   device: { manufacturer: string; model: string; androidVersion: string; sdk?: number };
   launchTimeMs?: number;
   steps: StepRecord[];
@@ -165,7 +167,8 @@ function categorize(e: unknown, kind: string): FailureCategory {
     if (e.code === "UNSUPPORTED_TEXT") return "unsupported_step";
     return kind.startsWith("assert") ? "assertion_failed" : "element_not_found";
   }
-  if (e instanceof AdbError) return e.code === "CLOSED" ? "device_disconnected" : e.code === "TIMEOUT" ? "timeout" : "unknown";
+  if (e instanceof ScreenStateError) return "screen_locked";
+  if (e instanceof AdbError) return e.code === "CLOSED" ? "device_disconnected" : e.code === "TIMEOUT" ? "timeout" : e.code === "UI_UNAVAILABLE" ? "ui_unavailable" : "unknown";
   return "unknown";
 }
 
@@ -206,6 +209,15 @@ export async function runFlow(d: Device, flow: Flow, opts: RunFlowOptions): Prom
   };
   const mark = await d.logMark();
   const ctx = { outDir: opts.outDir, files, launchTimeMs: undefined as number | undefined };
+  // A run may wake the screen and dismiss a lock screen without a credential; it never enters a PIN.
+  const wakeBefore = d.wakeOnDemand;
+  d.wakeOnDemand = true;
+  try {
+    const woke = await d.ensureScreenReady();
+    if (woke === "woke" || woke === "unlocked") log(`(screen ${woke === "woke" ? "was off; woke it" : "was on a lock screen without a PIN; dismissed it"})`);
+  } catch {
+    /* reported by the first step that needs the screen */
+  }
   const pids = new Set<number>();
 
   for (const [i, step] of flow.steps.entries()) {
@@ -227,7 +239,10 @@ export async function runFlow(d: Device, flow: Flow, opts: RunFlowOptions): Prom
       await appendFile(join(opts.outDir, "steps.jsonl"), `${JSON.stringify(rec)}\n`);
       const kind = typeof step === "string" ? step : (Object.keys(step)[0] ?? "");
       summary.status = "failed";
-      summary.failure = { step: i + 1, category: categorize(e, kind), message: rec.error, evidence: [], visibleOnScreen: e instanceof SelectorError && e.visible.length ? e.visible : undefined };
+      let category = categorize(e, kind);
+      // A command that timed out may just be slow; a phone that no longer answers is gone.
+      if (category === "timeout" && !(await d.alive())) category = "device_disconnected";
+      summary.failure = { step: i + 1, category, message: rec.error, evidence: [], visibleOnScreen: e instanceof SelectorError && e.visible.length ? e.visible : undefined };
       log(`    ✖ ${rec.error}`);
       break;
     }
@@ -237,9 +252,11 @@ export async function runFlow(d: Device, flow: Flow, opts: RunFlowOptions): Prom
   }
   if (!files.includes("steps.jsonl")) files.push("steps.jsonl");
   summary.launchTimeMs = ctx.launchTimeMs;
+  d.wakeOnDemand = wakeBefore;
 
-  // Evidence (always for failures; logs for passes too, they are cheap and useful).
-  try {
+  // Evidence (always for failures; logs for passes too, they are cheap and useful). Skipped when the
+  // phone is gone: each read would only wait for its own timeout.
+  if (summary.failure?.category !== "device_disconnected") try {
     if (summary.status === "failed") {
       try {
         await save("failure.png", await d.screenshotPng());
@@ -266,13 +283,17 @@ export async function runFlow(d: Device, flow: Flow, opts: RunFlowOptions): Prom
     if (c.verdict === "app_crash" || c.verdict === "anr") {
       summary.status = "failed";
       summary.failure = { step: summary.failure?.step ?? summary.steps.length, category: c.verdict, message: c.reason, evidence: c.evidence, visibleOnScreen: summary.failure?.visibleOnScreen };
-    } else if (summary.failure && !pid && summary.failure.category !== "device_disconnected") {
+    } else if (summary.failure && !pid && (summary.failure.category as FailureCategory) !== "device_disconnected") {
       summary.failure.category = "app_exited";
       summary.failure.message = `${summary.failure.message} (the app process is gone; no crash report was logged)`;
     }
   } catch (e) {
-    if (summary.status === "passed") throw e;
-    summary.failure!.category = e instanceof AdbError && e.code === "CLOSED" ? "device_disconnected" : summary.failure!.category;
+    const lost = e instanceof AdbError && (e.code === "CLOSED" || (e.code === "TIMEOUT" && !(await d.alive())));
+    if (summary.status === "passed") {
+      // Every step passed, but the logs could not be read afterwards: keep the result and say what was not checked.
+      if (!lost) throw e;
+      summary.warnings = [...(summary.warnings ?? []), `Lost the phone while reading logs after the last step (${(e as Error).message}); the crash check after the run was not done.`];
+    } else if (lost) summary.failure!.category = "device_disconnected";
   }
 
   await save("summary.json", `${JSON.stringify(summary, null, 2)}\n`);
@@ -293,6 +314,7 @@ table{border-collapse:collapse;width:100%;margin:16px 0}td,th{border-bottom:1px 
 <h1>${esc(s.name)} <small style="color:#666">${esc(s.package)}</small></h1>
 <p><span class="v">${ok ? "passed" : esc(s.failure?.category ?? "failed")}</span> ${esc(s.device.manufacturer)} ${esc(s.device.model)} · Android ${esc(s.device.androidVersion)}${s.launchTimeMs !== undefined ? ` · cold start ${s.launchTimeMs} ms` : ""}</p>
 ${s.failure ? `<p><b>Step ${s.failure.step}:</b> ${esc(s.failure.message)}</p>` : ""}
+${s.warnings?.length ? `<p><b>Not checked:</b> ${s.warnings.map(esc).join("<br>")}</p>` : ""}
 <table><tr><th>#</th><th>Step</th><th>Result</th><th>ms</th></tr>${s.steps
     .map((r) => `<tr class="${r.status === "failed" ? "f" : ""}"><td>${r.index}</td><td>${esc(r.step)}</td><td>${r.status === "failed" ? `✖ ${esc(r.error ?? "")}` : `✔ ${esc(r.detail ?? "")}`}</td><td>${r.durationMs}</td></tr>`)
     .join("")}</table>

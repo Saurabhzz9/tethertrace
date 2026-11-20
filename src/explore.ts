@@ -3,7 +3,7 @@ import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import YAML from "yaml";
 import { AdbError } from "./adb/connection.js";
-import { assertPackage, type Device, type UiNode } from "./device.js";
+import { assertPackage, ScreenStateError, type Device, type UiNode } from "./device.js";
 import { classify, filterAppLog, formatNodes } from "./smoke.js";
 
 /**
@@ -68,7 +68,7 @@ export interface ExploreCoverage {
   unlabeledSkipped: number;
   /** Screens where the app exposed no readable element at all (typical of canvas UIs and games). */
   screensWithoutElements: number[];
-  stoppedBy: "explored" | "limit" | "crash" | "ui_unavailable" | "error";
+  stoppedBy: "explored" | "limit" | "crash" | "ui_unavailable" | "screen_locked" | "error";
   warnings: string[];
 }
 
@@ -192,6 +192,9 @@ export async function explore(d: Device, o: ExploreOptions): Promise<ExploreSumm
   };
 
   let crashed = false;
+  const wakeBefore = d.wakeOnDemand;
+  d.wakeOnDemand = true; // may wake the screen or dismiss a lock screen without a PIN; never enters one
+  await d.ensureScreenReady().catch(() => undefined);
   try {
     try {
       await launch("launch");
@@ -212,10 +215,23 @@ export async function explore(d: Device, o: ExploreOptions): Promise<ExploreSumm
       let nodes: UiNode[];
       try {
         nodes = await d.uiNodes();
-      } catch {
+      } catch (e) {
+        if (e instanceof AdbError && e.code === "CLOSED") throw e;
+        if (e instanceof AdbError && e.code === "TIMEOUT" && !(await d.alive())) throw e;
+        // The screen may have locked or gone dark; wake it, or stop and say so.
+        try {
+          await d.ensureScreenReady();
+        } catch (se) {
+          if (se instanceof ScreenStateError) {
+            stoppedBy = "screen_locked";
+            summary.reason = se.message;
+            break;
+          }
+        }
         await new Promise((r) => setTimeout(r, 600));
         if (++stuck > 3) {
           stoppedBy = "ui_unavailable";
+          summary.reason = (e as Error).message;
           break;
         }
         continue;
@@ -332,12 +348,16 @@ export async function explore(d: Device, o: ExploreOptions): Promise<ExploreSumm
     }
   } catch (e) {
     stoppedBy = "error";
-    if (e instanceof AdbError && (e.code === "CLOSED" || e.code === "TIMEOUT")) {
+    if (e instanceof ScreenStateError) {
+      stoppedBy = "screen_locked";
+      summary.reason = e.message;
+    } else if (e instanceof AdbError && (e.code === "CLOSED" || e.code === "TIMEOUT")) {
       summary.verdict = "device_disconnected";
       summary.reason = `Lost the phone mid-run: ${e.message}`;
     } else if (summary.verdict !== "launch_failed") throw e;
   }
 
+  d.wakeOnDemand = wakeBefore;
   summary.skippedAsRisky = [...risky].slice(0, 50);
   if (summary.verdict === "no_crash_observed") {
     const pid = await d.pidOf(o.pkg);

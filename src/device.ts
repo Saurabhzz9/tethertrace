@@ -2,6 +2,39 @@ import { open } from "node:fs/promises";
 import { AdbConnection, AdbError, withTimeout, type AdbStream, type ConnectOptions } from "./adb/connection.js";
 import { downscalePng, rawScreencapToPng } from "./image.js";
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Screen power and lock state. A field is undefined when this Android build does not report it. */
+export interface ScreenState {
+  awake?: boolean;
+  locked?: boolean;
+}
+
+/**
+ * Read screen state from `dumpsys power` (mWakefulness), `dumpsys deviceidle` (mScreenOn,
+ * mScreenLocked) and `dumpsys window` (keyguard flags; names differ between Android versions).
+ */
+export function parseScreenState(text: string): ScreenState {
+  const s: ScreenState = {};
+  const wake = /mWakefulness=(\w+)/.exec(text)?.[1];
+  const on = /mScreenOn=(true|false)/.exec(text)?.[1];
+  if (wake) s.awake = wake === "Awake";
+  else if (on) s.awake = on === "true";
+  const flags = [...text.matchAll(/(?:mScreenLocked|isKeyguardShowing|mShowingLockscreen|mDreamingLockscreen|mKeyguardShowing)=(true|false)/g)].map((m) => m[1] === "true");
+  if (flags.length) s.locked = flags.some(Boolean);
+  return s;
+}
+
+/** The phone's screen is off or locked, so the app cannot be seen or touched. */
+export class ScreenStateError extends Error {
+  constructor(
+    readonly code: "SCREEN_LOCKED" | "SCREEN_OFF",
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 /** High-level device operations built on the raw ADB connection. */
 export class Device {
   private constructor(readonly adb: AdbConnection) {}
@@ -12,6 +45,69 @@ export class Device {
 
   get model() {
     return this.adb.banner.properties["ro.product.model"];
+  }
+
+  /**
+   * When true, a run may wake the screen and dismiss a lock screen that has no PIN, pattern or
+   * password. Off by default, so reading the screen never changes it; runs, smoke and explore turn it on.
+   */
+  wakeOnDemand = false;
+
+  async screenState(): Promise<ScreenState> {
+    const r = await this.shell("dumpsys power | grep -E 'mWakefulness='; dumpsys deviceidle | grep -E 'mScreenOn=|mScreenLocked='; dumpsys window | grep -E 'isKeyguardShowing=|mShowingLockscreen=|mDreamingLockscreen=|mKeyguardShowing='", 15_000);
+    return parseScreenState(r.text);
+  }
+
+  /**
+   * Make the screen usable: wake it, and dismiss a lock screen that needs no credential. A PIN,
+   * pattern or password is never entered: that ends in {@link ScreenStateError} SCREEN_LOCKED.
+   * Returns what it did; "unknown" when this phone does not report its screen state.
+   */
+  async ensureScreenReady(): Promise<"ready" | "woke" | "unlocked" | "unknown"> {
+    let s = await this.screenState();
+    if (s.awake === undefined && s.locked === undefined) return "unknown";
+    let did: "ready" | "woke" | "unlocked" = "ready";
+    if (s.awake === false) {
+      await this.shell("input keyevent KEYCODE_WAKEUP");
+      await sleep(600);
+      s = await this.screenState();
+      did = "woke";
+    }
+    if (s.locked) {
+      await this.shell("wm dismiss-keyguard");
+      await sleep(900);
+      s = await this.screenState();
+      if (s.locked) throw new ScreenStateError("SCREEN_LOCKED", "The phone is locked with a PIN, pattern or password. Unlock it and run again; tethertrace never enters your lock code.");
+      did = "unlocked";
+    }
+    if (s.awake === false) throw new ScreenStateError("SCREEN_OFF", "The phone's screen stayed off after a wake request.");
+    return did;
+  }
+
+  /** Is the phone still answering? A quick round trip, for telling a dead link from a slow command. */
+  async alive(timeoutMs = 5_000) {
+    try {
+      return (await this.shell("echo ok", timeoutMs)).text.includes("ok");
+    } catch {
+      return false;
+    }
+  }
+
+  /** Throw a clear error when the screen is off or locked, or fix it when {@link wakeOnDemand} allows. */
+  private async checkScreen() {
+    let s: ScreenState;
+    try {
+      s = await this.screenState();
+    } catch (e) {
+      if (e instanceof AdbError && e.code === "CLOSED") throw e;
+      return;
+    }
+    if (s.awake !== false && !s.locked) return;
+    if (this.wakeOnDemand) {
+      await this.ensureScreenReady();
+      return;
+    }
+    throw new ScreenStateError(s.locked ? "SCREEN_LOCKED" : "SCREEN_OFF", s.locked ? "The phone is locked, so the app is not on screen. Unlock it and try again." : "The phone's screen is off. Wake it and try again.");
   }
 
   async shell(command: string, timeoutMs?: number) {
@@ -74,9 +170,15 @@ export class Device {
   /** Dump of the current UI hierarchy XML. */
   async uiXml() {
     const path = "/data/local/tmp/tethertrace-ui.xml";
-    const r = await this.shell(`uiautomator dump ${path} >/dev/null && cat ${path}; rm -f ${path}`, 30_000);
+    const r = await this.shell(`uiautomator dump ${path} 2>&1 | grep -v 'dumped to' | head -3; cat ${path} 2>/dev/null; rm -f ${path}`, 30_000);
     const start = r.text.indexOf("<?xml");
-    if (start < 0) throw new AdbError("PROTOCOL", "UI hierarchy unavailable (secure screen or uiautomator busy)");
+    if (start < 0) {
+      const said = r.text.trim().split(/\r?\n/)[0]?.slice(0, 160) ?? "";
+      const why = /idle state/i.test(said)
+        ? "the screen never stopped changing (a playing video or a running animation keeps uiautomator from reading it)"
+        : "a secure screen, or uiautomator was busy";
+      throw new AdbError("UI_UNAVAILABLE", `UI hierarchy unavailable: ${why}${said ? ` [uiautomator: ${said}]` : ""}`);
+    }
     return r.text.slice(start);
   }
 
@@ -270,19 +372,26 @@ export class Device {
     const deadline = Date.now() + (opts.timeoutMs ?? 10_000);
     let last: UiNode[] = [];
     let lastErr: Error | undefined;
-    for (;;) {
+    for (let attempt = 0; ; attempt++) {
       try {
         last = await this.uiNodes();
         lastErr = undefined;
         const matches = findNodes(last, selector);
         if (opts.hidden) {
-          if (!matches.length) return undefined;
+          // "Gone" must not be concluded from a lock screen or a dark screen.
+          if (!matches.length) {
+            await this.checkScreen();
+            if (!findNodes(await this.uiNodes(), selector).length) return undefined;
+            continue;
+          }
         } else if (matches.length) return opts.pick ? pickOne(matches, selector) : matches[0];
       } catch (e) {
-        if (e instanceof SelectorError) throw e;
+        if (e instanceof SelectorError || e instanceof ScreenStateError) throw e;
         if (e instanceof AdbError && e.code === "CLOSED") throw e;
         lastErr = e as Error; // uiautomator can fail mid-animation; retry
       }
+      // Not there (yet): on the first miss and every few after, check whether the screen locked or went dark.
+      if (attempt % 4 === 0) await this.checkScreen();
       if (Date.now() > deadline) {
         if (lastErr) throw lastErr;
         throw new SelectorError(

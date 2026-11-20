@@ -14,6 +14,35 @@
 | Recording says "screenshot frames" | The phone's built-in `screenrecord` is missing or crashes (seen on some MediaTek/ColorOS builds). tethertrace records continuous screenshots instead (~4–6 fps) and builds `recording/index.html`; install ffmpeg if you also want an MP4. |
 | `INSTALL_FAILED_USER_RESTRICTED` | Some brands (Xiaomi, OPPO/realme, vivo) need "Install via USB/ADB" enabled in Developer options, or ask for confirmation on the phone. |
 
+## The screen locks or goes dark during a run
+
+`run`, `smoke`, `explore` and `verify` check the screen before they start and again whenever an
+element is not found. When the screen is off they wake it; when the lock screen needs no PIN,
+pattern or password (Swipe or None) they dismiss it and carry on.
+
+A real lock (PIN, pattern, password) is never entered. The step fails at once as `screen_locked`
+instead of waiting out its timeout, and an "is gone" check never passes because of a lock screen.
+For a phone you test on often, set Screen lock to Swipe or None and raise Screen timeout.
+
+Reading the screen (`ui`, `screenshot`, MCP read tools) never wakes or unlocks the phone; it reports
+`SCREEN_LOCKED` or `SCREEN_OFF` instead.
+
+## "UI hierarchy unavailable" (videos, animations)
+
+Android's `uiautomator` waits for the screen to be still before it reads it. A playing video or an
+endless animation can stop it from ever finishing ("could not get idle state"). tethertrace retries
+until the step's timeout, then fails the step as `ui_unavailable` with uiautomator's own message.
+It does not pause media for you: add a step that pauses the video, or wait for a still screen.
+Screens marked secure (FLAG_SECURE) cannot be read at all.
+
+## The phone drops off Wi-Fi mid-run
+
+A step that times out is checked with a quick round trip; if the phone no longer answers, the
+failure is `device_disconnected`, evidence that needs the phone is skipped (instead of waiting for
+each read to time out), and the report is still written. Steps already done are in `steps.jsonl`.
+In `verify`, flows after the loss are reported as not run. Commands do not reconnect mid-run;
+run them again. `dev` and the MCP server reconnect on the next action.
+
 ## Where things live
 
 - Pairing key: `~/.tethertrace/adbkey` (override with `TETHERTRACE_HOME`). Delete it to start over; the phone will need pairing again.

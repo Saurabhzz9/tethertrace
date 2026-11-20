@@ -5,7 +5,7 @@ export { Spake2, SPAKE2_POINTS } from "./adb/spake2.js";
 export { discover, buildQuery, parseResponse, servicesFromRecords, SERVICE_CONNECT, SERVICE_PAIRING, type DiscoveredService } from "./adb/mdns.js";
 export * as protocol from "./adb/protocol.js";
 export { SocketReader } from "./adb/reader.js";
-export { Device, assertPackage } from "./device.js";
+export { Device, assertPackage, parseScreenState, ScreenStateError, type ScreenState } from "./device.js";
 export { smoke, classify, filterAppLog, type SmokeSummary, type SmokeVerdict } from "./smoke.js";
 export { parseUiNodes, hasEmptyWebView, type UiNode } from "./device.js";
 export { findNodes, pickOne, SelectorError, visibleLabels, type Selector } from "./device.js";
